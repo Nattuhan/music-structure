@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <title>PracticeLab</title>
-  <link rel="stylesheet" href="styles.css?v=1.2.1-practice-ui">
+  <link rel="stylesheet" href="styles.css?v=1.2.1-control-layout">
 </head>
 <body>
 <div class="shell">
@@ -126,43 +126,45 @@
         <div class="structure-workspace" id="structure-workspace" hidden>
         <section class="player" id="player-card">
         <div class="transport-bar">
-          <button class="t-btn t-play" id="btn-play" type="button" aria-label="再生／一時停止" title="再生／一時停止"><i data-lucide="play" class="play-icon"></i><i data-lucide="pause" class="pause-icon"></i></button>
-          <button class="t-btn icon-only" id="btn-restart" type="button" aria-label="先頭から再生" title="先頭から再生"><i data-lucide="skip-back"></i></button>
-          <div class="t-sep"></div>
-          <button class="t-btn icon-only" id="btn-loop" type="button" aria-label="ループ" aria-pressed="false" title="選択範囲をループ"><i data-lucide="repeat-2"></i></button>
-          <button class="t-btn mode-btn" id="btn-auto-next" type="button" aria-label="自動で次へ" aria-pressed="false" title="曲が終わると次の曲を再生します。ループ中は無効です。" hidden><i data-lucide="list-end"></i><span>次へ</span></button>
-          <button class="t-btn icon-only" id="btn-metro" type="button" aria-label="クリック" aria-pressed="false" title="クリック"><i data-lucide="music-2"></i></button>
-          <div class="t-spacer"></div>
-          <span class="kbd-hint">スペース 再生／停止 · ←/→ 移動</span>
-        </div>
+          <div class="transport-controls" aria-label="再生操作">
+            <button class="t-btn t-play" id="btn-play" type="button" aria-label="再生／一時停止" title="再生／一時停止"><i data-lucide="play" class="play-icon"></i><i data-lucide="pause" class="pause-icon"></i></button>
+            <button class="t-btn icon-only" id="btn-restart" type="button" aria-label="先頭から再生" title="先頭から再生"><i data-lucide="skip-back"></i></button>
+            <div class="t-sep"></div>
+            <button class="t-btn icon-only" id="btn-loop" type="button" aria-label="ループ" aria-pressed="false" title="選択範囲をループ"><i data-lucide="repeat-2"></i></button>
+            <button class="t-btn mode-btn" id="btn-auto-next" type="button" aria-label="自動で次へ" aria-pressed="false" title="曲が終わると次の曲を再生します。ループ中は無効です。" hidden><i data-lucide="list-end"></i><span>次へ</span></button>
+            <button class="t-btn icon-only" id="btn-metro" type="button" aria-label="クリック" aria-pressed="false" title="クリック"><i data-lucide="music-2"></i></button>
+          </div>
 
-        <div class="vol-bar">
-          <div class="vol-item music-vol-item">
-            <span class="vol-lbl" title="楽曲音量"><i data-lucide="volume-2"></i><span>楽曲</span></span>
-            <input type="range" id="vol-music" min="0" max="100" value="80">
-            <span class="vol-val" id="vol-music-val">80%</span>
-          </div>
-          <div class="vol-item">
-            <span class="vol-lbl" title="クリック音量"><i data-lucide="music-2"></i><span>クリック</span></span>
-            <input type="range" id="vol-metro" min="0" max="100" value="85">
-            <span class="vol-val" id="vol-metro-val">85%</span>
-          </div>
-          <div class="bpm-item">
-            <span class="stat-lbl">BPM</span>
-            <div class="bpm-actions">
-              <button class="mini-btn" id="btn-bpm-half">÷2</button>
-              <button class="mini-btn" id="btn-bpm-double">×2</button>
-              <button class="mini-btn" id="btn-bpm-reset">戻す</button>
-              <button class="mini-btn" id="btn-bpm-save">保存</button>
-              <button class="mini-btn" id="btn-click-offset">裏拍</button>
+          <div class="volume-controls" aria-label="音量操作">
+            <div class="vol-item music-vol-item">
+              <span class="vol-lbl" title="楽曲音量"><i data-lucide="volume-2"></i><span>楽曲</span></span>
+              <input type="range" id="vol-music" min="0" max="100" value="80" aria-label="楽曲音量">
+              <span class="vol-val" id="vol-music-val">80%</span>
             </div>
-            <span class="stat-val orange" id="meta-bpm">-</span>
+            <div class="vol-item">
+              <span class="vol-lbl" title="クリック音量"><i data-lucide="music-2"></i><span>クリック</span></span>
+              <input type="range" id="vol-metro" min="0" max="100" value="85" aria-label="クリック音量">
+              <span class="vol-val" id="vol-metro-val">85%</span>
+            </div>
           </div>
-          <div class="vol-item speed-item">
-            <span class="vol-lbl" title="再生速度"><i data-lucide="gauge"></i><span>速度</span></span>
-            <button class="mini-btn icon-only speed-reset" id="btn-speed-reset" type="button" aria-label="再生速度を戻す" title="再生速度を戻す"><i data-lucide="rotate-ccw"></i></button>
-            <input type="range" id="playback-rate" min="0.25" max="1.25" step="0.05" value="1">
-            <span class="vol-val speed-val" id="playback-rate-val">1.00x</span>
+
+          <div class="tempo-controls" aria-label="テンポ操作">
+            <div class="bpm-item">
+              <div class="bpm-reading"><span class="stat-lbl">BPM</span><span class="stat-val orange" id="meta-bpm">-</span></div>
+              <div class="bpm-actions" role="group" aria-label="BPM操作">
+                <button class="mini-btn" id="btn-bpm-half" type="button" aria-label="BPMを半分にする" title="BPMを半分にする">半分</button>
+                <button class="mini-btn" id="btn-bpm-double" type="button" aria-label="BPMを2倍にする" title="BPMを2倍にする">2倍</button>
+                <button class="mini-btn" id="btn-bpm-reset" type="button" aria-label="解析時のBPMに戻す" title="解析時のBPMに戻す">元に戻す</button>
+                <button class="mini-btn" id="btn-bpm-save" type="button" aria-label="現在のBPMを保存" title="現在のBPMを保存">保存</button>
+                <button class="mini-btn" id="btn-click-offset" type="button" aria-label="クリックを裏拍に切り替える" title="クリックを裏拍に切り替える">裏拍</button>
+              </div>
+            </div>
+            <div class="vol-item speed-item">
+              <span class="vol-lbl" title="再生速度"><i data-lucide="gauge"></i><span>速度</span></span>
+              <button class="mini-btn icon-only speed-reset" id="btn-speed-reset" type="button" aria-label="再生速度を戻す" title="再生速度を戻す"><i data-lucide="rotate-ccw"></i></button>
+              <input type="range" id="playback-rate" min="0.25" max="1.25" step="0.05" value="1" aria-label="再生速度">
+              <span class="vol-val speed-val" id="playback-rate-val">1.00x</span>
+            </div>
           </div>
         </div>
 
@@ -186,22 +188,15 @@
           <div id="waveform"></div>
           <div class="waveform-loading" id="waveform-loading" hidden><span class="spin"></span>音声を読み込み中...</div>
           <div class="audio-note" id="audio-note" hidden>このセッションには音声がありません。解析情報のみ表示します。</div>
-        </div>
-        <div class="time-bar">
-          <span id="time-cur">00:00</span>
-          <span id="time-tot">00:00</span>
-        </div>
-
-          <div class="stats-bar">
-            <div class="stat">
-              <span class="stat-val" id="meta-bars">-</span>
-              <span class="stat-lbl">小節</span>
-            </div>
+          <div class="time-bar">
+            <span id="time-cur">00:00</span>
             <div class="loop-stat">
               <span class="loop-info" id="loop-info"></span>
               <button class="mini-btn clear-range-btn" id="btn-clear-range" hidden>範囲を解除</button>
             </div>
+            <span id="time-tot">00:00</span>
           </div>
+        </div>
 
           <div class="sec-header-row">
             <span class="sec-hdr-label">セクション</span>
@@ -703,6 +698,6 @@
   <div class="queue-list" id="queue-list"></div>
 </aside>
 
-<script type="module" src="app.js?v=1.2.1-practice-ui"></script>
+<script type="module" src="app.js?v=1.2.1-control-layout"></script>
 </body>
 </html>

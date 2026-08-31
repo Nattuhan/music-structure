@@ -150,6 +150,12 @@ test("可視操作を小さく潰さず文字を切らない", async ({ page }) 
 test("PCの動画全画面でも練習情報と操作を見渡せる", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
+  await expect(page.locator(".kbd-hint")).toHaveCount(0);
+  await expect(page.locator("#meta-bars")).toHaveCount(0);
+  await expect(page.locator("#btn-bpm-half")).toHaveText("半分");
+  await expect(page.locator("#btn-bpm-double")).toHaveText("2倍");
+  await expect(page.locator("#btn-bpm-reset")).toHaveText("元に戻す");
+  await expect(page.locator(".waveform-wrap > .time-bar")).toBeVisible();
   await expect(page.locator("#video-wrap")).toHaveClass(/no-video/);
   await page.locator("#video-wrap").evaluate(videoWrap => {
     videoWrap.classList.remove("no-video");
@@ -170,11 +176,23 @@ test("PCの動画全画面でも練習情報と操作を見渡せる", async ({ 
     "#video-player",
     "#waveform",
     "#time-cur",
-    "#loop-info",
   ]) {
     await expect(page.locator(selector)).toBeVisible();
   }
   await expect(page.locator("#sections")).toBeHidden();
+  const controlRows = await page.locator(".transport-controls, .volume-controls, .tempo-controls").evaluateAll(groups =>
+    groups.map(group => {
+      const rect = group.getBoundingClientRect();
+      return Math.round(rect.top + rect.height / 2);
+    }),
+  );
+  expect(Math.max(...controlRows) - Math.min(...controlRows)).toBeLessThanOrEqual(1);
+  const clickLabel = await page.locator(".volume-controls .vol-item").nth(1).locator(".vol-lbl").evaluate(label => ({
+    height: label.getBoundingClientRect().height,
+    whiteSpace: getComputedStyle(label).whiteSpace,
+  }));
+  expect(clickLabel.whiteSpace).toBe("nowrap");
+  expect(clickLabel.height).toBeLessThanOrEqual(20);
   expect(await page.locator("#player-card").evaluate(player => player.scrollHeight <= player.clientHeight + 1)).toBe(true);
 });
 
