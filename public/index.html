@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <title>PracticeLab</title>
-  <link rel="stylesheet" href="styles.css?v=1.2.1-control-layout">
+  <link rel="stylesheet" href="styles.css?v=1.2.1-fullscreen-layout-fix">
 </head>
 <body>
 <div class="shell">
@@ -125,6 +125,7 @@
 
         <div class="structure-workspace" id="structure-workspace" hidden>
         <section class="player" id="player-card">
+        <div class="practice-controls">
         <div class="transport-bar">
           <div class="transport-controls" aria-label="再生操作">
             <button class="t-btn t-play" id="btn-play" type="button" aria-label="再生／一時停止" title="再生／一時停止"><i data-lucide="play" class="play-icon"></i><i data-lucide="pause" class="pause-icon"></i></button>
@@ -134,7 +135,9 @@
             <button class="t-btn mode-btn" id="btn-auto-next" type="button" aria-label="自動で次へ" aria-pressed="false" title="曲が終わると次の曲を再生します。ループ中は無効です。" hidden><i data-lucide="list-end"></i><span>次へ</span></button>
             <button class="t-btn icon-only" id="btn-metro" type="button" aria-label="クリック" aria-pressed="false" title="クリック"><i data-lucide="music-2"></i></button>
           </div>
+        </div>
 
+        <div class="vol-bar">
           <div class="volume-controls" aria-label="音量操作">
             <div class="vol-item music-vol-item">
               <span class="vol-lbl" title="楽曲音量"><i data-lucide="volume-2"></i><span>楽曲</span></span>
@@ -167,6 +170,7 @@
             </div>
           </div>
         </div>
+        </div>
 
         <div class="video-wrap" id="video-wrap">
           <video id="video-player" muted playsinline preload="metadata"></video>
@@ -188,13 +192,20 @@
           <div id="waveform"></div>
           <div class="waveform-loading" id="waveform-loading" hidden><span class="spin"></span>音声を読み込み中...</div>
           <div class="audio-note" id="audio-note" hidden>このセッションには音声がありません。解析情報のみ表示します。</div>
-          <div class="time-bar">
-            <span id="time-cur">00:00</span>
-            <div class="loop-stat">
-              <span class="loop-info" id="loop-info"></span>
-              <button class="mini-btn clear-range-btn" id="btn-clear-range" hidden>範囲を解除</button>
-            </div>
-            <span id="time-tot">00:00</span>
+        </div>
+        <div class="time-bar">
+          <span id="time-cur">00:00</span>
+          <span id="time-tot">00:00</span>
+        </div>
+
+        <div class="stats-bar">
+          <div class="stat">
+            <span class="stat-val" id="meta-bars">-</span>
+            <span class="stat-lbl">小節</span>
+          </div>
+          <div class="loop-stat">
+            <span class="loop-info" id="loop-info"></span>
+            <button class="mini-btn clear-range-btn" id="btn-clear-range" hidden>範囲を解除</button>
           </div>
         </div>
 
@@ -698,6 +709,6 @@
   <div class="queue-list" id="queue-list"></div>
 </aside>
 
-<script type="module" src="app.js?v=1.2.1-control-layout"></script>
+<script type="module" src="app.js?v=1.2.1-fullscreen-layout-fix"></script>
 </body>
 </html>

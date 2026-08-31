@@ -2633,6 +2633,7 @@ var SELECTORS = {
   btnSaveSections: document.getElementById("btn-save-sections"),
   btnRestoreSections: document.getElementById("btn-restore-sections"),
   metaBpm: document.getElementById("meta-bpm"),
+  metaBars: document.getElementById("meta-bars"),
   loopInfo: document.getElementById("loop-info"),
   btnClearRange: document.getElementById("btn-clear-range"),
   timeCur: document.getElementById("time-cur"),
@@ -4518,6 +4519,7 @@ var handleVideoClick = (event) => {
     togglePlayback();
   }, 240);
 };
+var adjustBarValue = (value) => Math.max(1, Math.round(value * bpmFactor));
 var adjustBarRange = (startBar, endBar) => {
   const start = Math.max(1, Math.round((startBar - 1) * bpmFactor) + 1);
   const end = Math.max(start, Math.round(endBar * bpmFactor));
@@ -4527,6 +4529,7 @@ var applyBpmDisplay = () => {
   if (!currentData) return;
   const value = Number(currentData.bpm || 0) * bpmFactor;
   SELECTORS.metaBpm.textContent = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  SELECTORS.metaBars.textContent = adjustBarValue(currentData.total_bars || 0);
   document.querySelectorAll(".sec-row").forEach((row, index) => {
     const section = currentData.sections[index];
     if (!section) return;

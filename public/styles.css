@@ -4335,167 +4335,84 @@ select:focus,
   }
 }
 
-/* Single-row practice controls and timeline ----------------------------- */
-.transport-bar {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: clamp(10px, 1.2vw, 20px);
-  min-width: 0;
-  padding: 8px 12px;
-}
-
+/* Shared control clarity; fullscreen compaction is scoped below. */
+.practice-controls { min-width: 0; }
 .transport-controls,
 .volume-controls,
 .tempo-controls,
-.bpm-reading {
-  display: flex;
-  align-items: center;
-}
-
-.transport-controls { gap: 8px; }
-.volume-controls { min-width: 0; gap: clamp(10px, 1vw, 16px); }
-.tempo-controls { justify-self: end; gap: 12px; }
-.transport-controls .t-btn { flex: 0 0 auto; }
-
-.transport-bar .vol-item {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 7px;
-}
-
-.transport-bar .vol-lbl {
-  width: auto;
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.transport-bar .vol-val { flex: 0 0 auto; }
-.volume-controls input[type="range"] { width: clamp(64px, 5vw, 96px); }
-.tempo-controls input[type="range"] { width: clamp(64px, 5vw, 92px); }
-
-.transport-bar .bpm-item {
-  margin-left: 0;
-  gap: 9px;
-}
-
-.bpm-reading {
-  gap: 6px;
-  padding-right: 2px;
-  white-space: nowrap;
-}
-
-.bpm-reading .stat-val {
-  min-width: 34px;
-  font-size: 20px;
-  text-align: right;
-}
-
-.transport-bar .bpm-actions { flex-wrap: nowrap; }
-.transport-bar .bpm-actions .mini-btn {
-  min-height: 30px;
-  padding: 4px 7px;
-  white-space: nowrap;
-}
-
-.transport-bar .speed-item { margin-left: 0; }
-
-.waveform-wrap {
-  min-height: 82px;
-  padding-bottom: 25px;
-}
-
-.waveform-wrap > .time-bar {
-  position: absolute;
-  right: 12px;
-  bottom: 3px;
-  left: 12px;
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: 10px;
-  min-height: 20px;
-  padding: 0;
-  pointer-events: none;
-}
-
-.waveform-wrap > .time-bar .loop-stat {
-  justify-content: center;
-  min-width: 0;
-  min-height: 20px;
-  padding: 0;
-  text-align: center;
-}
-
-.waveform-wrap > .time-bar .loop-info { flex: 0 1 auto; }
-.waveform-wrap > .time-bar .clear-range-btn { pointer-events: auto; }
-
-@media (max-width: 1500px) and (min-width: 681px) {
-  .transport-bar { gap: 8px; padding-inline: 8px; }
-  .transport-controls { gap: 5px; }
-  .volume-controls { gap: 8px; }
-  .tempo-controls { gap: 8px; }
-  .volume-controls .vol-lbl span,
-  .tempo-controls .speed-item .vol-lbl span { display: none; }
-  .volume-controls input[type="range"],
-  .tempo-controls input[type="range"] { width: 58px; }
-  .volume-controls .vol-val { display: none; }
-  .transport-bar .bpm-actions .mini-btn { padding-inline: 5px; }
-}
-
-@media (max-width: 1120px) and (min-width: 681px) {
-  .structure-workspace { grid-template-columns: minmax(0, 1fr); }
-  .stem-panel { position: static; }
-  .transport-bar { overflow-x: auto; }
-}
+.bpm-reading { display: flex; align-items: center; }
+.transport-controls { width: 100%; gap: 8px; }
+.volume-controls { gap: 16px; }
+.tempo-controls { gap: 12px; margin-left: auto; }
+.vol-bar .vol-item { min-width: 0; }
+.vol-lbl { white-space: nowrap; }
+.bpm-item { margin-left: 0; gap: 9px; }
+.bpm-reading { gap: 6px; white-space: nowrap; }
+.bpm-reading .stat-val { min-width: 34px; font-size: 20px; text-align: right; }
+.bpm-actions { flex-wrap: nowrap; }
+.bpm-actions .mini-btn { min-height: 30px; padding: 4px 7px; white-space: nowrap; }
+.speed-item { margin-left: 0; }
 
 @media (max-width: 680px) {
-  .transport-bar {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 12px;
-    padding: 7px 8px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
+  .transport-bar { display: block; }
+  .transport-controls {
+    display: grid;
+    grid-template-columns: 1.15fr repeat(4, 1fr);
+    gap: 6px;
   }
-  .transport-controls,
+  .transport-controls .t-sep { display: none; }
   .volume-controls,
-  .tempo-controls { flex: 0 0 auto; gap: 6px; }
-  .transport-controls .t-sep { display: block; margin-inline: 1px; }
-  .transport-controls .t-btn {
-    width: 40px;
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0;
-  }
-  .transport-controls .t-btn.t-play { width: 46px; min-width: 46px; }
-  .transport-controls .t-btn.mode-btn { font-size: 0; }
-  .transport-bar .music-vol-item { display: flex; }
-  .transport-bar .vol-item { display: flex; flex: 0 0 auto; grid-template-columns: none; }
-  .transport-bar .vol-lbl { width: auto; }
-  .transport-bar .vol-lbl span { display: none; }
-  .transport-bar .vol-val { width: 38px; }
-  .volume-controls input[type="range"],
-  .tempo-controls input[type="range"] { width: 72px; }
-  .transport-bar .bpm-item { flex: 0 0 auto; }
-  .transport-bar .bpm-actions .mini-btn { min-height: 34px; }
-  .waveform-wrap { min-height: 76px; padding-bottom: 25px; }
-  .waveform-wrap > .time-bar { right: 8px; left: 8px; }
+  .tempo-controls { width: 100%; flex-wrap: wrap; }
+  .volume-controls .vol-item,
+  .tempo-controls .vol-item { flex: 1 1 100%; }
+  .tempo-controls .bpm-item { flex: 1 1 100%; }
 }
 
 @media (min-width: 681px) {
   body.video-fullscreen-mode #player-card {
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) 94px;
   }
 
-  body.video-fullscreen-mode .video-wrap {
-    grid-row: 2;
+  body.video-fullscreen-mode #player-card > .practice-controls {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-column: 1;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    min-width: 0;
+    min-height: 58px;
+    border-bottom: 1px solid rgba(255, 255, 255, .1);
+    background: linear-gradient(180deg, rgba(34, 40, 51, .84), rgba(19, 24, 32, .78));
+    backdrop-filter: blur(18px) saturate(135%);
   }
 
+  body.video-fullscreen-mode .practice-controls > .transport-bar,
+  body.video-fullscreen-mode .practice-controls > .vol-bar {
+    min-height: 58px;
+    border: 0;
+    background: transparent;
+  }
+
+  body.video-fullscreen-mode .practice-controls > .transport-bar { padding-inline: 12px 8px; }
+  body.video-fullscreen-mode .practice-controls > .vol-bar {
+    display: flex;
+    flex-wrap: nowrap;
+    min-width: 0;
+    gap: 12px;
+    padding: 7px 12px 7px 8px;
+  }
+
+  body.video-fullscreen-mode .volume-controls { min-width: 0; gap: 12px; }
+  body.video-fullscreen-mode .tempo-controls { flex: 0 0 auto; gap: 10px; }
+  body.video-fullscreen-mode .volume-controls input[type="range"] { width: clamp(62px, 5vw, 96px); }
+  body.video-fullscreen-mode .tempo-controls input[type="range"] { width: clamp(62px, 5vw, 92px); }
+
+  body.video-fullscreen-mode .video-wrap { grid-column: 1; grid-row: 2; }
+
   body.video-fullscreen-mode #player-card > .waveform-wrap {
+    grid-column: 1;
     grid-row: 3;
     height: 94px;
     padding: 10px 16px 25px;
@@ -4507,8 +4424,42 @@ select:focus,
     overflow: hidden;
   }
 
-  body.video-fullscreen-mode #player-card > .transport-bar {
-    min-height: 58px;
-    background: linear-gradient(180deg, rgba(34, 40, 51, .84), rgba(19, 24, 32, .78));
+  body.video-fullscreen-mode #player-card > .time-bar {
+    z-index: 4;
+    grid-column: 1;
+    grid-row: 3;
+    align-self: end;
+    padding: 0 16px 4px;
+    pointer-events: none;
   }
+
+  body.video-fullscreen-mode #player-card > .stats-bar {
+    z-index: 3;
+    grid-column: 1;
+    grid-row: 3;
+    align-self: end;
+    min-height: 24px;
+    border: 0;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  body.video-fullscreen-mode #player-card > .stats-bar .stat { display: none; }
+  body.video-fullscreen-mode #player-card > .stats-bar .loop-stat {
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 70px 4px;
+    text-align: center;
+  }
+  body.video-fullscreen-mode #player-card > .stats-bar .loop-info { flex: 0 1 auto; }
+  body.video-fullscreen-mode #player-card > .stats-bar .clear-range-btn { pointer-events: auto; }
+}
+
+@media (min-width: 681px) and (max-width: 1500px) {
+  body.video-fullscreen-mode .practice-controls { overflow-x: auto; }
+  body.video-fullscreen-mode .practice-controls .vol-lbl span { display: none; }
+  body.video-fullscreen-mode .practice-controls .volume-controls .vol-val { display: none; }
+  body.video-fullscreen-mode .practice-controls .volume-controls input[type="range"],
+  body.video-fullscreen-mode .practice-controls .tempo-controls input[type="range"] { width: 58px; }
+  body.video-fullscreen-mode .practice-controls .bpm-actions .mini-btn { padding-inline: 5px; }
 }
