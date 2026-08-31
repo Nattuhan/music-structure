@@ -46,6 +46,7 @@ const SELECTORS = {
   queueList: document.getElementById("queue-list"),
   queueCount: document.getElementById("queue-count"),
   queueClearInterrupted: document.getElementById("queue-clear-interrupted"),
+  queueToggle: document.getElementById("queue-toggle"),
   btnJobHistory: document.getElementById("btn-job-history"),
   jobHistoryRefresh: document.getElementById("job-history-refresh"),
   jobHistorySummary: document.getElementById("job-history-summary"),
@@ -2505,6 +2506,17 @@ const queueOperationLabel = kind => ({
   "score-extract": "楽譜抽出",
   "cloud-sync": "端末間同期",
 })[kind] || "処理";
+
+const QUEUE_MINIMIZED_KEY = "practice_lab_queue_minimized_v1";
+
+const setQueueMinimized = (minimized, { persist = true } = {}) => {
+  if (!SELECTORS.queueDock || !SELECTORS.queueToggle) return;
+  SELECTORS.queueDock.classList.toggle("minimized", minimized);
+  SELECTORS.queueToggle.setAttribute("aria-expanded", String(!minimized));
+  SELECTORS.queueToggle.setAttribute("aria-label", minimized ? "処理一覧を表示" : "処理一覧を最小化");
+  SELECTORS.queueToggle.title = minimized ? "処理一覧を表示" : "処理一覧を最小化";
+  if (persist) localStorage.setItem(QUEUE_MINIMIZED_KEY, minimized ? "1" : "0");
+};
 
 const renderQueueDock = () => {
   if (!SELECTORS.queueDock || !SELECTORS.queueList || !SELECTORS.queueCount) return;
@@ -5256,6 +5268,10 @@ SELECTORS.queueList?.addEventListener("click", event => {
   cancelQueuedJob(button.dataset.jobId);
 });
 SELECTORS.queueClearInterrupted?.addEventListener("click", discardAllInterruptedJobs);
+SELECTORS.queueToggle?.addEventListener("click", () => {
+  setQueueMinimized(!SELECTORS.queueDock.classList.contains("minimized"));
+});
+setQueueMinimized(localStorage.getItem(QUEUE_MINIMIZED_KEY) === "1", { persist: false });
 SELECTORS.scoreRegenerateBtn?.addEventListener("click", () => regenerateScore());
 SELECTORS.scoreEditSettingsBtn?.addEventListener("click", () => editScoreSettings());
 SELECTORS.scoreHistoryList?.addEventListener("click", async event => {

@@ -311,6 +311,25 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
   await expect(dialog.getByText("成功", { exact: true })).toBeVisible();
 });
 
+test("処理一覧を処理を消さずに最小化して再表示できる", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#queue-dock").evaluate(dock => {
+    dock.hidden = false;
+    dock.querySelector("#queue-list").innerHTML = '<div class="queue-item running">処理中</div>';
+  });
+
+  await page.locator("#queue-toggle").click();
+  await expect(page.locator("#queue-dock")).toHaveClass(/minimized/);
+  await expect(page.locator("#queue-list")).toBeHidden();
+  await expect(page.locator("#queue-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#queue-count")).toBeVisible();
+
+  await page.locator("#queue-toggle").click();
+  await expect(page.locator("#queue-dock")).not.toHaveClass(/minimized/);
+  await expect(page.locator("#queue-list")).toBeVisible();
+  await expect(page.locator("#queue-list")).toContainText("処理中");
+});
+
 test("古い処理履歴にもライブラリから曲名を補完する", async ({ page }) => {
   await installDesktopSettingsMock(page);
   await page.route("**/jobs/history", route => route.fulfill({

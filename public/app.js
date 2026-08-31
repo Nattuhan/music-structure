@@ -2485,6 +2485,7 @@ var SELECTORS = {
   queueList: document.getElementById("queue-list"),
   queueCount: document.getElementById("queue-count"),
   queueClearInterrupted: document.getElementById("queue-clear-interrupted"),
+  queueToggle: document.getElementById("queue-toggle"),
   btnJobHistory: document.getElementById("btn-job-history"),
   jobHistoryRefresh: document.getElementById("job-history-refresh"),
   jobHistorySummary: document.getElementById("job-history-summary"),
@@ -4732,6 +4733,15 @@ var queueOperationLabel = (kind) => ({
   "score-extract": "\u697D\u8B5C\u62BD\u51FA",
   "cloud-sync": "\u7AEF\u672B\u9593\u540C\u671F"
 })[kind] || "\u51E6\u7406";
+var QUEUE_MINIMIZED_KEY = "practice_lab_queue_minimized_v1";
+var setQueueMinimized = (minimized, { persist = true } = {}) => {
+  if (!SELECTORS.queueDock || !SELECTORS.queueToggle) return;
+  SELECTORS.queueDock.classList.toggle("minimized", minimized);
+  SELECTORS.queueToggle.setAttribute("aria-expanded", String(!minimized));
+  SELECTORS.queueToggle.setAttribute("aria-label", minimized ? "\u51E6\u7406\u4E00\u89A7\u3092\u8868\u793A" : "\u51E6\u7406\u4E00\u89A7\u3092\u6700\u5C0F\u5316");
+  SELECTORS.queueToggle.title = minimized ? "\u51E6\u7406\u4E00\u89A7\u3092\u8868\u793A" : "\u51E6\u7406\u4E00\u89A7\u3092\u6700\u5C0F\u5316";
+  if (persist) localStorage.setItem(QUEUE_MINIMIZED_KEY, minimized ? "1" : "0");
+};
 var renderQueueDock = () => {
   if (!SELECTORS.queueDock || !SELECTORS.queueList || !SELECTORS.queueCount) return;
   const jobs = [...trackedJobs.values()].sort((a3, b2) => b2.createdAt - a3.createdAt);
@@ -7295,6 +7305,10 @@ SELECTORS.queueList?.addEventListener("click", (event) => {
   cancelQueuedJob(button.dataset.jobId);
 });
 SELECTORS.queueClearInterrupted?.addEventListener("click", discardAllInterruptedJobs);
+SELECTORS.queueToggle?.addEventListener("click", () => {
+  setQueueMinimized(!SELECTORS.queueDock.classList.contains("minimized"));
+});
+setQueueMinimized(localStorage.getItem(QUEUE_MINIMIZED_KEY) === "1", { persist: false });
 SELECTORS.scoreRegenerateBtn?.addEventListener("click", () => regenerateScore());
 SELECTORS.scoreEditSettingsBtn?.addEventListener("click", () => editScoreSettings());
 SELECTORS.scoreHistoryList?.addEventListener("click", async (event) => {

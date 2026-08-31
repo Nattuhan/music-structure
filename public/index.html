@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <title>PracticeLab</title>
-  <link rel="stylesheet" href="styles.css?v=1.2.0-fullscreen">
+  <link rel="stylesheet" href="styles.css?v=1.2.0-practice-ui">
 </head>
 <body>
 <div class="shell">
@@ -690,15 +690,19 @@
 <div class="context-menu" id="context-menu" hidden></div>
 <aside class="queue-dock" id="queue-dock" hidden>
   <div class="queue-head">
-    <span>処理一覧</span>
+    <span class="queue-head-label">処理一覧</span>
     <div class="queue-head-actions">
       <button class="queue-clear" id="queue-clear-interrupted" type="button" hidden>すべてキャンセル</button>
       <span class="queue-count" id="queue-count">0</span>
+      <button class="queue-minimize" id="queue-toggle" type="button" aria-expanded="true" aria-label="処理一覧を最小化" title="処理一覧を最小化">
+        <i class="queue-collapse-icon" data-lucide="minus"></i>
+        <i class="queue-expand-icon" data-lucide="chevron-up"></i>
+      </button>
     </div>
   </div>
   <div class="queue-list" id="queue-list"></div>
 </aside>
 
-<script type="module" src="app.js?v=1.2.0-fullscreen"></script>
+<script type="module" src="app.js?v=1.2.0-practice-ui"></script>
 </body>
 </html>
