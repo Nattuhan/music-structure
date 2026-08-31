@@ -5345,6 +5345,6 @@ const initialHistory = await loadHistory();
 // start can otherwise leave the sidebar empty long enough to look like data
 // loss even though the manifest is already available.
 void refreshDesktopSystemStatus();
-void restoreInterruptedJobs();
+await restoreInterruptedJobs();
 await restoreLastStructureSession(initialHistory);
 void verifySavedCloudSettings();

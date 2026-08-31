@@ -313,6 +313,8 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
 
 test("処理一覧を処理を消さずに最小化して再表示できる", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("#topbar-song")).toHaveText("E2E Baseline");
+  await expect(page.locator("#topbar-song")).toBeVisible();
   await page.locator("#queue-dock").evaluate(dock => {
     dock.hidden = false;
     dock.querySelector("#queue-list").innerHTML = '<div class="queue-item running">処理中</div>';

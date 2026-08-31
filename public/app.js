@@ -7378,7 +7378,7 @@ await loadOptionalFeatures();
 await loadSharedFolders();
 var initialHistory = await loadHistory();
 void refreshDesktopSystemStatus();
-void restoreInterruptedJobs();
+await restoreInterruptedJobs();
 await restoreLastStructureSession(initialHistory);
 void verifySavedCloudSettings();
 /*! Bundled license information:
