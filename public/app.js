@@ -2442,6 +2442,12 @@ var stemGroupSyncAction = ({
   };
 };
 
+// frontend/src/video-gestures.js
+var videoClickAction = ({ pendingSingleClick = false, coarsePointer = false } = {}) => {
+  if (!pendingSingleClick) return "wait";
+  return coarsePointer ? "seek" : "fullscreen";
+};
+
 // frontend/src/app.js
 var lucide = { createIcons: renderIcons };
 var COLORS = {
@@ -4496,10 +4502,15 @@ var seekVideoByClickSide = (event) => {
 };
 var handleVideoClick = (event) => {
   event.preventDefault();
-  if (videoClickTimer) {
+  const action = videoClickAction({
+    pendingSingleClick: !!videoClickTimer,
+    coarsePointer: window.matchMedia("(hover: none) and (pointer: coarse)").matches
+  });
+  if (action !== "wait") {
     clearTimeout(videoClickTimer);
     videoClickTimer = 0;
-    seekVideoByClickSide(event);
+    if (action === "seek") seekVideoByClickSide(event);
+    else toggleVideoFullscreen();
     return;
   }
   videoClickTimer = window.setTimeout(() => {

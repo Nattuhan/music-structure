@@ -4169,3 +4169,135 @@ select:focus,
   .stem-row { min-height: 46px; }
   .main { padding-bottom: calc(54px + env(safe-area-inset-bottom)); }
 }
+
+/* Desktop practice fullscreen keeps the complete transport and timeline in view. */
+@media (min-width: 681px) {
+  body.video-fullscreen-mode #player-card {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) 82px 18px auto;
+    width: 100dvw;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    background: #05070a;
+    box-shadow: none;
+    overflow: hidden;
+  }
+
+  body.video-fullscreen-mode #player-card > .transport-bar,
+  body.video-fullscreen-mode #player-card > .vol-bar,
+  body.video-fullscreen-mode #player-card > .waveform-wrap,
+  body.video-fullscreen-mode #player-card > .time-bar,
+  body.video-fullscreen-mode #player-card > .stats-bar {
+    position: relative;
+    z-index: 2;
+    border-color: rgba(255, 255, 255, .1);
+    background: rgba(13, 17, 24, .76);
+    backdrop-filter: blur(18px) saturate(135%);
+  }
+
+  body.video-fullscreen-mode #player-card > .transport-bar {
+    background: linear-gradient(180deg, rgba(34, 40, 51, .84), rgba(19, 24, 32, .78));
+  }
+
+  body.video-fullscreen-mode #player-card > .vol-bar {
+    flex-wrap: nowrap;
+    min-height: 48px;
+  }
+
+  body.video-fullscreen-mode .video-wrap {
+    position: relative;
+    inset: auto;
+    z-index: 1;
+    grid-row: 3;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    aspect-ratio: auto;
+    border: 0;
+  }
+
+  body.video-fullscreen-mode .video-fs-controls {
+    display: none;
+  }
+
+  body.video-fullscreen-mode .video-fs-exit {
+    top: 14px;
+    right: 14px;
+    width: 40px;
+    height: 40px;
+    border-color: rgba(255, 255, 255, .24);
+    border-radius: 10px;
+    background: rgba(10, 13, 18, .58);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+    backdrop-filter: blur(18px) saturate(135%);
+  }
+
+  body.video-fullscreen-mode .video-fs-exit::before,
+  body.video-fullscreen-mode .video-fs-exit::after {
+    left: 11px;
+    top: 19px;
+    width: 16px;
+  }
+
+  body.video-fullscreen-mode #player-card > .waveform-wrap {
+    grid-row: 4;
+    height: 82px;
+    padding: 11px 16px 8px;
+    background: rgba(9, 12, 18, .82);
+  }
+
+  body.video-fullscreen-mode #player-card > .time-bar {
+    grid-row: 5;
+    padding: 2px 16px 0;
+  }
+
+  body.video-fullscreen-mode #player-card > .stats-bar {
+    grid-row: 6;
+    min-height: 44px;
+  }
+
+  body.video-fullscreen-mode #player-card .stat {
+    padding: 8px 16px;
+  }
+
+  body.video-fullscreen-mode #player-card .stat-val {
+    font-size: 18px;
+  }
+
+  body.video-fullscreen-mode #player-card .loop-stat {
+    padding: 8px 14px;
+  }
+
+  body.video-fullscreen-mode #player-card > .sec-header-row,
+  body.video-fullscreen-mode #player-card > .sections {
+    display: none;
+  }
+}
+
+@media (min-width: 681px) and (max-width: 1100px) {
+  body.video-fullscreen-mode #player-card {
+    grid-template-rows: auto auto minmax(0, 1fr) 72px 18px auto;
+  }
+
+  body.video-fullscreen-mode #player-card > .vol-bar {
+    gap: 9px;
+    padding-inline: 10px;
+  }
+
+  body.video-fullscreen-mode #player-card .vol-lbl {
+    width: auto;
+  }
+
+  body.video-fullscreen-mode #player-card input[type="range"] {
+    width: 78px;
+  }
+
+  body.video-fullscreen-mode #player-card > .waveform-wrap {
+    height: 72px;
+  }
+}

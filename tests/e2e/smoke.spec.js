@@ -147,6 +147,37 @@ test("可視操作を小さく潰さず文字を切らない", async ({ page }) 
   expect(issues).toEqual([]);
 });
 
+test("PCの動画全画面でも練習情報と操作を見渡せる", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("#video-wrap")).toHaveClass(/no-video/);
+  await page.locator("#video-wrap").evaluate(videoWrap => {
+    videoWrap.classList.remove("no-video");
+    document.body.classList.add("video-fullscreen-mode");
+  });
+
+  const playerBox = await page.locator("#player-card").boundingBox();
+  expect(playerBox).toEqual({ x: 0, y: 0, width: 1440, height: 900 });
+  for (const selector of [
+    "#btn-play",
+    "#btn-restart",
+    "#btn-loop",
+    "#btn-metro",
+    "#vol-music",
+    "#vol-metro",
+    "#meta-bpm",
+    "#playback-rate",
+    "#video-player",
+    "#waveform",
+    "#time-cur",
+    "#loop-info",
+  ]) {
+    await expect(page.locator(selector)).toBeVisible();
+  }
+  await expect(page.locator("#sections")).toBeHidden();
+  expect(await page.locator("#player-card").evaluate(player => player.scrollHeight <= player.clientHeight + 1)).toBe(true);
+});
+
 test("スマホ縦横で主要画面と設定全項目が画面内に収まる", async ({ page }) => {
   await installDesktopSettingsMock(page);
   const assertFitsViewport = async locator => {

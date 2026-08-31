@@ -6,6 +6,7 @@ import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
 import { extractWaveformPeaks } from "./waveform-peaks.js";
 import { mediaSyncAction, planStemPlayback, stemGroupSyncAction } from "./playback-sync.js";
+import { videoClickAction } from "./video-gestures.js";
 
 const lucide = { createIcons: renderIcons };
 
@@ -2256,10 +2257,15 @@ const seekVideoByClickSide = event => {
 
 const handleVideoClick = event => {
   event.preventDefault();
-  if (videoClickTimer) {
+  const action = videoClickAction({
+    pendingSingleClick: !!videoClickTimer,
+    coarsePointer: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
+  });
+  if (action !== "wait") {
     clearTimeout(videoClickTimer);
     videoClickTimer = 0;
-    seekVideoByClickSide(event);
+    if (action === "seek") seekVideoByClickSide(event);
+    else toggleVideoFullscreen();
     return;
   }
   videoClickTimer = window.setTimeout(() => {

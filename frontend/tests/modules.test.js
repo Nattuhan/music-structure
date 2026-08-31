@@ -7,6 +7,7 @@ import { mutateSectionDraft, normalizeSectionDraft } from "../src/section-editor
 import { mediaSyncAction, planStemPlayback, stemGroupSyncAction } from "../src/playback-sync.js";
 import { formatBytes } from "../src/storage.js";
 import { extractWaveformPeaks } from "../src/waveform-peaks.js";
+import { videoClickAction } from "../src/video-gestures.js";
 
 const sessions = [
   { id: "a", title: "Beta", tags: ["ライブ"], date: "2026-01-01", lastPracticedAt: null },
@@ -129,4 +130,10 @@ test("実音源のサンプルから表示用波形を生成する", () => {
   assert.equal(peaks.length, 4);
   assert.ok(peaks[2] > peaks[0]);
   assert.equal(Math.max(...peaks), 1);
+});
+
+test("動画のダブルクリックはPCで全画面、タッチ端末で左右移動にする", () => {
+  assert.equal(videoClickAction({ pendingSingleClick: false, coarsePointer: false }), "wait");
+  assert.equal(videoClickAction({ pendingSingleClick: true, coarsePointer: false }), "fullscreen");
+  assert.equal(videoClickAction({ pendingSingleClick: true, coarsePointer: true }), "seek");
 });
