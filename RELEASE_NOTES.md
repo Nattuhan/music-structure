@@ -1,15 +1,23 @@
-# PracticeLab v1.2.1
+# PracticeLab v1.2.2
 
-全画面での練習操作と、処理一覧の取り回しを改善したメンテナンスリリースです。
+曲ごとの音量差を抑えるため、パート音源の生成時にも自動で音量を補正します。
 
 ## ダウンロード
 
-- **Windows 10/11**: `PracticeLab-Setup-1.2.1.exe`
-- **macOS（Apple Silicon）**: `PracticeLab-1.2.1-arm64.dmg`
+- **Windows 10/11**: `PracticeLab-Setup-1.2.2.exe`
+- **macOS（Apple Silicon）**: `PracticeLab-1.2.2-arm64.dmg`
 
 Windows CPU解析、Mac解析、楽譜抽出は、アプリの「設定 → 追加機能」から必要な場合だけ追加できます。追加パックをReleaseページから手動で展開する必要はありません。
 
-## v1.2.1の変更
+## v1.2.2の変更
+
+### パート音源の音量補正
+
+- 全パートを合わせた音量を測定し、共通の倍率で補正
+- パート間のバランスと曲中の強弱を保ち、ピークに応じて増幅量を制限
+- 既存のパート音源は「再生成」で適用
+
+## v1.2.1で追加した改善
 
 ### 全画面での練習
 
@@ -29,10 +37,10 @@ Windows CPU解析、Mac解析、楽譜抽出は、アプリの「設定 → 追�
 
 ## 配布される追加パック
 
-- `PracticeLab-Windows-CPU-1.2.1.zip`
-- `PracticeLab-Analysis-macOS-arm64-1.2.1.zip`
-- `PracticeLab-Score-Windows-1.2.1.zip`
-- `PracticeLab-Score-macOS-arm64-1.2.1.zip`
+- `PracticeLab-Windows-CPU-1.2.2.zip`
+- `PracticeLab-Analysis-macOS-arm64-1.2.2.zip`
+- `PracticeLab-Score-Windows-1.2.2.zip`
+- `PracticeLab-Score-macOS-arm64-1.2.2.zip`
 - `PracticeLab-SHA256SUMS.txt`
 
 追加パックはアプリがSHA-256を検証してから展開します。
