@@ -1,0 +1,57 @@
+name: Stage notarized Mac release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: App version already signed by MornNotary
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  stage:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+      - name: Receive the notarized artifact
+        env:
+          ARTIFACT_URL: ${{ secrets.MORNNOTARY_ARTIFACT_URL }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$VERSION" = "$(node -p 'require("./package.json").version')"
+          test -n "$ARTIFACT_URL"
+          mkdir -p received source release
+          # A short-lived URL grants access only to the approved app artifact;
+          # no MornNotary account token or signing credential is copied here.
+          curl --fail --silent --show-error --location "$ARTIFACT_URL" --output received/artifact.zip
+          ditto -x -k received/artifact.zip received
+          cp "received/PracticeLab-$VERSION-arm64-signed.zip" "release/PracticeLab-$VERSION-arm64.zip"
+          ditto -x -k "release/PracticeLab-$VERSION-arm64.zip" source
+      - name: Verify and package the signed app
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python scripts/verify_notarized_macos.py source/PracticeLab.app --version "$VERSION" --runtime
+          ln -s /Applications source/Applications
+          hdiutil create -volname PracticeLab -srcfolder source -format UDZO "release/PracticeLab-$VERSION-arm64.dmg"
+          python scripts/verify_notarized_macos.py "release/PracticeLab-$VERSION-arm64.dmg" --version "$VERSION" --runtime
+          npm ci --ignore-scripts
+          node scripts/macos_update_metadata.cjs write "release/PracticeLab-$VERSION-arm64.zip" "$VERSION" release/latest-mac.yml
+          node scripts/macos_update_metadata.cjs verify "release/PracticeLab-$VERSION-arm64.zip" "$VERSION" release/latest-mac.yml
+          shasum -a 256 "release/PracticeLab-$VERSION-arm64.dmg" | awk '{print $1}' > "release/PracticeLab-Notarized-Mac-$VERSION.sha256"
+      - name: Stage assets on the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$(gh release view "v$VERSION" --json isDraft --jq .isDraft)" = "true"
+          gh release upload "v$VERSION" release/* --clobber

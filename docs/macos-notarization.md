@@ -61,3 +61,9 @@ CIはZIPの署名・公証と更新情報のハッシュ・サイズも検証し
 タグのCIはWindows版と追加機能をビルドし、Mac側ではdraftから受け取ったDMGのハッシュ、公証、実行環境を再検証します。公証済みの入力がない場合は失敗し、ローカルビルド用のアドホック署名DMGを代わりに公開しません。Windows、Mac、公開処理のすべてが成功してから公開完了とします。
 
 参考: [Electronの公証要件](https://github.com/electron/notarize)、[Appleの公証手順](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)。
+
+## GitHub側で配布物を準備する場合
+
+ローカル回線で大きい配布物を再送したくない場合は、`stage-notarized-mac.yml`を使用できます。成功したMornNotary runのArtifactに対する短時間だけ有効なダウンロードURLを、`MORNNOTARY_ARTIFACT_URL`という一時的なActions Secretに保存し、署名済みバージョンを指定して実行します。URLは対象アプリのArtifactだけを取得できるもので、アカウントのトークンや署名用の秘密鍵は渡しません。実行が終わったら一時Secretを削除します。
+
+この処理は署名・公証・起動を再検証し、DMGと更新情報を作って既存draftへ添付するだけです。一般公開は通常のタグ付きリリースワークフローで行います。
