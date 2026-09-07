@@ -1,6 +1,6 @@
-# 未署名配布版のインストール
+# 配布版の署名とインストール
 
-PracticeLabは費用のかかるコード署名証明書やApple Developer Programを使用せず、GitHub Releasesから無料配布しています。そのため、OSから「発行元を確認できない」という警告が表示されます。必ず公式の[GitHub Releases](https://github.com/Nattuhan/practice-lab/releases/latest)から取得してください。
+PracticeLabはGitHub Releasesから無料配布しています。Mac版はv1.2.2からDeveloper ID署名・Apple公証済みのアプリを配布します。Windows版と以前のMac版は未署名・未公証で、OSの警告が表示される場合があります。必ず公式の[GitHub Releases](https://github.com/Nattuhan/practice-lab/releases/latest)から取得してください。
 
 ## ダウンロードを確認する
 
@@ -21,10 +21,10 @@ Get-FileHash "$HOME\Downloads\PracticeLab-Setup-*.exe" -Algorithm SHA256
 ## Mac（Apple Silicon）
 
 1. DMGを開き、PracticeLabを「アプリケーション」へドラッグします。
-2. Finderの「アプリケーション」でPracticeLabをControlキーを押しながらクリックし、「開く」を選びます。
-3. 確認画面でもう一度「開く」を選びます。
+2. 「アプリケーション」のPracticeLabを通常どおり開きます。
+3. インターネットからダウンロードしたアプリである旨の初回確認が出た場合は、入手元を確認して開きます。
 
-通常のダブルクリックで拒否された場合は、システム設定の「プライバシーとセキュリティ」に表示されるPracticeLabの「このまま開く」も利用できます。Intel Macには対応していません。
+Intel Macには対応していません。以前の未公証版を利用している場合は、まず公式Releaseの新しい版へ更新してください。
 
 ## Windows 10/11
 

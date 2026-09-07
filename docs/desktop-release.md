@@ -10,8 +10,8 @@ NVIDIAへ切り替えてWSL2 CUDAランタイムをセットアップします�
 
 Apple Silicon Mac版は同じUIと軽量FastAPIバックエンドを同梱し、PyTorch、NATTEN、
 all-in-one-fix、Demucsを含む解析環境は設定の「追加機能」から必要時に導入します。Intel Macは対象外です。
-Apple Developer IDを使用しない無料配布ビルドには、DMG作成前にアドホック署名を施して
-アプリバンドル内部の整合性を保証します。これはNotarizationの代替ではありません。
+ローカルビルドには提出前のアドホック署名を施します。一般公開するMacアプリは、
+[MornNotaryを使った署名・公証手順](macos-notarization.md)を経由し、検証済みDMGをdraft Releaseへ用意してからタグをpushします。
 
 アプリ本体と利用者データは分離されています。
 
@@ -58,18 +58,13 @@ Windows版は起動後にGitHub Releasesを確認し、新版を取得します�
 画面上の更新ボタンから再起動して適用できます。Mac版はGitHub Releaseから新しいDMGを
 取得して手動で入れ替えます。
 
-## 無料・未署名での配布方針
+## 署名と公開の方針
 
-有料のWindowsコード署名証明書とApple Developer Programは使用しません。Windows版は
-未署名、Mac版はアドホック署名・未公証で配布します。CIは意図どおり未署名であること、Macの
-アプリ内部が壊れていないことを検査し、全配布物のSHA-256をPracticeLab-SHA256SUMS.txtへ
-記録します。利用者向け手順は[未署名配布版の案内](../UNSIGNED_DISTRIBUTION.md)に記載します。
+Windows版は従来どおり未署名です。Mac版はv1.2.2からMornNotary経由のDeveloper ID署名・Apple公証を使用します。証明書とAppleの認証情報はMornNotary側のSecretsに保持し、PracticeLabのリポジトリへ複製しません。
 
-## macOS署名とNotarization
+タグのMac jobはdraft Releaseから公証済みDMGとSHA-256を取得し、Gatekeeperとランタイムの検証を通してから配布Artifactへ格納します。未公証ビルドへのフォールバックはありません。全job成功後、公開処理がWindows版、追加パック、検証済みMac版を一般公開します。
 
-現在のApple Silicon Mac版は、GitHub Actionsでアドホック署名した未公証DMGとして配布します。ビルド時に`codesign --verify --deep --strict`でアプリバンドルの整合性を検証し、Gatekeeperから信頼済みと誤認されないことも確認します。利用者向けの起動手順は[未署名配布版の案内](../UNSIGNED_DISTRIBUTION.md)に記載しています。
-
-Developer ID署名とNotarizationは費用をかけない方針のため、現状の対象外です。
+詳細は[署名・公証手順](macos-notarization.md)、利用者向けには[インストール案内](../UNSIGNED_DISTRIBUTION.md)を参照してください。
 
 ## Windowsの解析環境
 

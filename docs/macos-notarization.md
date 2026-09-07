@@ -1,0 +1,53 @@
+# macOSアプリの署名とApple公証
+
+Mac配布版をDeveloper ID署名・Apple公証済みにする場合は、[MornNotary](https://github.com/matsufriends/MornNotary)へアプリを提出します。通常のローカルビルドは提出前のアドホック署名のままです。MornNotaryの証明書はコピーせず、同リポジトリのGitHub Actions内だけで利用します。成果物の署名名義は同サービスの運用者です。
+
+アプリの公証、このMacへのインストール、GitHub Releaseの一般公開は別の操作です。一般公開とR2同期は、ユーザーが依頼した場合だけ行います。
+
+## 提出前の確認
+
+- `docs/desktop-release.md`とリリーススキルに従ってビルド・テストする。
+- `codesign --verify --deep --strict PracticeLab.app`で提出元の整合性を確認する。
+- 配布物に利用者の音源、設定、認証情報、処理履歴を含めない。
+- `CFBundleShortVersionString`と提出名を一致させ、元ZIPのSHA-256を記録する。
+
+## 大きいZIPの扱い
+
+PracticeLabはGitHubの単一ファイル上限100 MiBを超えるため、MornNotaryの分割ZIP対応が必要です。共有mainを直接変更せず、提出用ブランチに変更とアプリをまとめます。
+
+```bash
+ditto -c -k --keepParent PracticeLab.app PracticeLab-full.zip
+zip -s 80m PracticeLab-full.zip --out incoming/PracticeLab-1.2.2-arm64.zip
+```
+
+生成された`.z01`、`.z02`などと、最後の`.zip`をすべて提出します。分割ファイルごとのSHA-256台帳も添付し、runnerでは検証後に`zip -s 0`で単一ZIPへ戻してから展開します。提出前にローカルでも再結合・展開し、アプリの署名検証が通ることを確認します。
+
+## PracticeLabに必要な署名設定
+
+すべてのMach-Oを内側からDeveloper IDで署名し、Hardened Runtimeと安全なタイムスタンプを付けます。
+
+- Electron本体とHelper実行ファイル: `com.apple.security.cs.allow-jit`。V8の実行に必要です。
+- 同梱バックエンド: `com.apple.security.cs.disable-library-validation`。利用者データ領域の追加楽譜抽出パックを読み込むために必要です。
+- それ以外のバイナリ: 上記の例外を一律に付けません。
+
+最後に外側のアプリへ署名する際、内側の権限を保持します。`notarytool`の結果が`Accepted`となり、`stapler staple`と`stapler validate`が成功した成果物だけを使います。
+
+## 受け取りと検証
+
+Actionsの署名済みArtifactをダウンロードし、`ditto`で展開します。次のコマンドでDeveloper ID、Hardened Runtime、公証票、Gatekeeper、同梱ランタイムを検証します。
+
+```bash
+.venv/bin/python scripts/verify_notarized_macos.py /path/to/PracticeLab.app --version 1.2.2 --runtime
+```
+
+公証済みアプリをDMGに格納した場合も、同じ検証スクリプトにDMGを渡せます。DMG内のアプリに公証票があることを確認し、DMG自体の公証を済ませたという表現とは区別します。
+
+このMacの更新を依頼されている場合は、既存アプリを終了し、検証済みのアプリをステージング先へコピーしてから入れ替えます。利用者データは保持し、起動確認後に旧アプリをゴミ箱へ移します。
+
+## GitHub Releaseへの一般公開
+
+タグをpushする前に、検証済みDMGを同じバージョンのdraft Releaseへ置きます。`PracticeLab-Notarized-Mac-X.Y.Z.sha256`にはDMGのSHA-256だけを1行で保存して添付します。
+
+タグのCIはWindows版と追加機能をビルドし、Mac側ではdraftから受け取ったDMGのハッシュ、公証、実行環境を再検証します。公証済みの入力がない場合は失敗し、ローカルビルド用のアドホック署名DMGを代わりに公開しません。Windows、Mac、公開処理のすべてが成功してから公開完了とします。
+
+参考: [Electronの公証要件](https://github.com/electron/notarize)、[Appleの公証手順](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)。

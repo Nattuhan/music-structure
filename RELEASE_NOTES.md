@@ -11,6 +11,11 @@ Windows CPU解析、Mac解析、楽譜抽出は、アプリの「設定 → 追�
 
 ## v1.2.2の変更
 
+### Mac版の署名とApple公証
+
+- Mac配布アプリにDeveloper ID署名とApple公証を適用
+- 公証票とGatekeeperの受け入れ、同梱ランタイムの起動を確認したDMGだけを公開
+
 ### パート音源の音量補正
 
 - 全パートを合わせた音量を測定し、共通の倍率で補正
@@ -45,6 +50,6 @@ Windows CPU解析、Mac解析、楽譜抽出は、アプリの「設定 → 追�
 
 追加パックはアプリがSHA-256を検証してから展開します。
 
-## 未署名版について
+## 署名について
 
-このリリースは費用のかかるWindowsコード署名証明書とApple Developer IDを使用していません。WindowsではSmartScreen、MacではGatekeeperの確認が表示される場合があります。詳しい起動方法はリポジトリの`UNSIGNED_DISTRIBUTION.md`を参照してください。
+MacアプリはDeveloper ID署名・Apple公証済みです。Windows版は従来どおり未署名で、SmartScreenの確認が表示される場合があります。インストール手順はリポジトリの`UNSIGNED_DISTRIBUTION.md`を参照してください。
