@@ -45,7 +45,7 @@ def build_manifest_entry(payload: dict, *, entry_date: str) -> dict:
         "date": entry_date,
         "assets": payload["assets"],
     }
-    for key in ("tags", "lastPracticedAt", "practiceCount"):
+    for key in ("tags", "lastOpenedAt"):
         if key in payload:
             entry[key] = payload[key]
     return entry

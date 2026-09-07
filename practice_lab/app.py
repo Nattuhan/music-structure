@@ -451,7 +451,7 @@ def create_app() -> FastAPI:
                 update_library_metadata,
                 video_id,
                 tags=request.tags,
-                played=request.played,
+                opened=request.opened,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

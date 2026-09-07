@@ -259,13 +259,12 @@ class SessionAssetTests(unittest.TestCase):
                 "title": "Song",
                 "bpm": 120,
                 "tags": ["課題曲"],
-                "lastPracticedAt": "2026-08-10T10:00:00+00:00",
-                "practiceCount": 2,
+                "lastOpenedAt": "2026-08-10T10:00:00+00:00",
             },
             entry_date="2026-08-10",
         )
         self.assertEqual(entry["tags"], ["課題曲"])
-        self.assertEqual(entry["practiceCount"], 2)
+        self.assertEqual(entry["lastOpenedAt"], "2026-08-10T10:00:00+00:00")
 
 
 class R2ConfigTests(unittest.TestCase):
@@ -342,7 +341,7 @@ class R2ConfigTests(unittest.TestCase):
 
 
 class LibraryMetadataTests(unittest.TestCase):
-    def test_play_marks_session_as_practiced_and_normalizes_tags(self):
+    def test_open_updates_last_opened_and_normalizes_tags(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             results_dir = Path(temp_dir)
             result_file = results_dir / "song-1.json"
@@ -360,12 +359,12 @@ class LibraryMetadataTests(unittest.TestCase):
                 updated = services.update_library_metadata(
                     "song-1",
                     tags=[" 課題曲 ", "課題曲", "ライブ"],
-                    played=True,
+                    opened=True,
                 )
 
             self.assertEqual(updated["tags"], ["課題曲", "ライブ"])
-            self.assertEqual(updated["practiceCount"], 1)
-            self.assertTrue(updated["lastPracticedAt"])
+            self.assertNotIn("practiceCount", updated)
+            self.assertTrue(updated["lastOpenedAt"])
             replace.assert_called_once()
 
 

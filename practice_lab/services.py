@@ -814,7 +814,9 @@ def cleanup_uploaded_analysis(session_id: str, source_path: Path) -> None:
 
 
 def cleanup_canceled_stems(video_id: str) -> None:
-    for path in (DATA_STEMS_DIR / video_id, PUBLIC_STEMS_DIR / video_id, DATA_WORK_DIR / video_id / "stems"):
+    # Published stems may belong to a previous successful generation. Cancel
+    # only disposable working data, never the currently playable version.
+    for path in (DATA_STEMS_DIR / video_id, DATA_WORK_DIR / video_id / "stems"):
         if path.exists():
             shutil.rmtree(path)
     export_static_assets()
@@ -1399,16 +1401,30 @@ def create_stems(video_id: str, job_id: str | None = None) -> dict:
     gain_db = measure_stem_gain([stem_wav_dir / f"{stem}.wav" for stem in STEM_NAMES])
     raise_if_job_canceled(job_id)
     public_stem_dir = PUBLIC_STEMS_DIR / video_id
-    if public_stem_dir.exists():
-        shutil.rmtree(public_stem_dir)
-    public_stem_dir.mkdir(parents=True, exist_ok=True)
-
-    for stem in STEM_NAMES:
+    PUBLIC_STEMS_DIR.mkdir(parents=True, exist_ok=True)
+    # Stage on the same filesystem so a failed encode/cancel cannot remove the
+    # previous mix. Keep a rollback copy until the directory swap succeeds.
+    with tempfile.TemporaryDirectory(prefix=f".{video_id}-staging-", dir=PUBLIC_STEMS_DIR) as temporary:
+        stage = Path(temporary) / "new"
+        backup = Path(temporary) / "previous"
+        stage.mkdir()
+        for stem in STEM_NAMES:
+            raise_if_job_canceled(job_id)
+            set_job_status(job_id, "stems", f"Encoding {stem}")
+            destination = stage / f"{stem}.mp3"
+            convert_stem_wav_to_mp3(stem_wav_dir / f"{stem}.wav", destination, gain_db=gain_db)
+            if not destination.is_file() or destination.stat().st_size == 0:
+                raise RuntimeError(f"パート音源の変換に失敗しました: {stem}")
         raise_if_job_canceled(job_id)
-        set_job_status(job_id, "stems", f"Encoding {stem}")
-        convert_stem_wav_to_mp3(stem_wav_dir / f"{stem}.wav", public_stem_dir / f"{stem}.mp3", gain_db=gain_db)
+        if public_stem_dir.exists():
+            public_stem_dir.rename(backup)
+        try:
+            stage.rename(public_stem_dir)
+        except Exception:
+            if backup.exists():
+                backup.rename(public_stem_dir)
+            raise
 
-    raise_if_job_canceled(job_id)
     data = attach_session_assets(json.loads(result_file.read_text(encoding="utf-8")))
     save_json(result_file, data)
     update_manifest(build_manifest_entry(data, entry_date=date.today().isoformat()))
@@ -1524,7 +1540,7 @@ def rename_result(video_id: str, title: str) -> dict:
     return renamed
 
 
-def update_library_metadata(video_id: str, *, tags: list[str] | None = None, played: bool = False) -> dict:
+def update_library_metadata(video_id: str, *, tags: list[str] | None = None, opened: bool = False) -> dict:
     if Path(video_id).name != video_id:
         raise ValueError("セッションIDが不正です")
     result_file = DATA_RESULTS_DIR / f"{video_id}.json"
@@ -1543,9 +1559,8 @@ def update_library_metadata(video_id: str, *, tags: list[str] | None = None, pla
             normalized.append(tag)
             seen.add(key)
         data["tags"] = normalized[:20]
-    if played:
-        data["lastPracticedAt"] = datetime.now(timezone.utc).isoformat()
-        data["practiceCount"] = max(0, int(data.get("practiceCount") or 0)) + 1
+    if opened:
+        data["lastOpenedAt"] = datetime.now(timezone.utc).isoformat()
 
     updated = attach_session_assets(data)
     save_json(result_file, updated)

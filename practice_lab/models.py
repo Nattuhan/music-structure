@@ -31,7 +31,7 @@ class RenameSessionRequest(BaseModel):
 
 class LibraryMetadataRequest(BaseModel):
     tags: list[str] | None = Field(default=None, max_length=20)
-    played: bool = False
+    opened: bool = False
 
 
 class SectionEditEntry(BaseModel):
@@ -162,8 +162,7 @@ class AnalyzeResponse(BaseModel):
     beats: list[float] = []
     downbeats: list[float] = []
     tags: list[str] = []
-    lastPracticedAt: str | None = None
-    practiceCount: int = 0
+    lastOpenedAt: str | None = None
     automaticSections: list[SectionEntry] | None = None
     sectionsEditedAt: str | None = None
     cached: bool = False
