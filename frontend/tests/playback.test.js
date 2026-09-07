@@ -17,13 +17,13 @@ class Media extends EventTarget {
   load() { this.error = null; }
   fire(name) { this.dispatchEvent(new Event(name)); }
 }
-const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
-const fixture = () => {
+const flush = () => new Promise(resolve => setImmediate(resolve));
+const fixture = (options = {}) => {
   const clock = { time: 10, rate: 1, playing: true };
   const players = { vocals: new Media(), drums: new Media() };
   const events = [];
   const transport = createStemTransport({ getTime: () => clock.time, getRate: () => clock.rate,
-    isPlaying: () => clock.playing, onChange: state => events.push(state) });
+    isPlaying: () => clock.playing, onChange: state => events.push(state), ...options });
   transport.setPlayers(players);
   clock.playing = false;
   const setMix = (mix, volume = 1) => transport.setMix(planStemPlayback({ stemNames: Object.keys(players), mix, mobile: false, activated: true }), mix, volume);
@@ -119,6 +119,36 @@ test('元音源の読み込み停止・復帰と待機中の一時停止を扱�
   transport.setMasterWaiting(false);
   await flush();
   assert.ok(Object.values(players).every(player => player.paused));
+});
+
+test('全パートのシーク完了まで基準音源を保持し、停止操作では再開しない', async () => {
+  const releases = [];
+  const { players, transport } = fixture({ holdMaster: () => resume => releases.push(resume) });
+  players.vocals.play = () => { players.vocals.readyState = 2; return Promise.resolve(); };
+  const pending = transport.play();
+  await flush();
+  assert.equal(transport.snapshot().state, 'starting');
+  assert.deepEqual(releases, []);
+  transport.pause();
+  await pending;
+  assert.deepEqual(releases, [false]);
+  assert.equal(players.vocals.paused, true);
+});
+
+test('重複する再生通知で準備中や再生中のパートを中断しない', async () => {
+  const { players, transport } = fixture();
+  let resolve;
+  let starts = 0;
+  players.vocals.play = () => { starts++; return starts === 1 ? new Promise(done => { resolve = done; }) : Promise.resolve(); };
+  const pending = transport.play();
+  await transport.play();
+  assert.equal(starts, 1);
+  resolve();
+  await pending;
+  const preparedStarts = starts;
+  await transport.play();
+  assert.equal(starts, preparedStarts);
+  assert.equal(transport.snapshot().state, 'stems');
 });
 
 test('古い非同期再生結果は曲切替後や停止後の状態を上書きしない', async () => {

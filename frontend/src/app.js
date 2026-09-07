@@ -334,6 +334,8 @@ let audioReady = false;
 let videoAvailable = true;
 let playbackRate = 1;
 let audioCtx = null;
+let masterSourceNode = null;
+const stemSourceNodes = new Map();
 const scheduledClickVoices = new Set();
 let customLoopRange = null;
 let waveformSelectionEl = null;
@@ -354,6 +356,7 @@ let lastVideoSyncAt = 0;
 let videoClickTimer = 0;
 let stemPlayers = {};
 let stemReady = false;
+let stemHoldingMaster = false;
 let currentStemAssets = null;
 let mobileStemMixActivated = false;
 let stemExportInProgress = false;
@@ -1071,7 +1074,19 @@ const hasStemAssets = assets =>
 const stemTransport = createStemTransport({
   getTime: () => ws?.getCurrentTime() ?? 0,
   getRate: () => playbackRate,
-  isPlaying: () => !!ws?.isPlaying(),
+  isPlaying: () => stemHoldingMaster || !!ws?.isPlaying(),
+  holdMaster: () => {
+    const master = ws;
+    const resume = !!master?.isPlaying();
+    stemHoldingMaster = true;
+    stopMetro();
+    pauseVideo();
+    master?.pause();
+    return shouldResume => {
+      stemHoldingMaster = false;
+      if (shouldResume && resume && ws === master) void master.play();
+    };
+  },
   onChange: () => { updateOriginalVolume(); updateStemPlaybackStatus(); },
   onSync: (audioTime, drift, stemCount) => logPlaybackDiagnostic("stem-resync", {
     audioTime, drift, stemCount, playbackRate, forced: 1,
@@ -1083,6 +1098,8 @@ const updateOriginalVolume = () => {
 };
 const destroyStemPlayers = () => {
   stemTransport.destroy();
+  for (const source of stemSourceNodes.values()) source.disconnect();
+  stemSourceNodes.clear();
   for (const player of Object.values(stemPlayers)) {
     player.pause();
     player.removeAttribute("src");
@@ -1893,7 +1910,14 @@ const initStemPlayers = stemAssets => {
   destroyStemPlayers();
   if (!hasStemAssets({ stems: stemAssets })) return false;
   for (const stem of STEM_NAMES) {
-    const player = new Audio(stemAssets[stem]);
+    const player = new Audio();
+    player.crossOrigin = "anonymous";
+    player.src = stemAssets[stem];
+    // A shared output context prevents independently opened audio devices from
+    // introducing different startup latencies for the master and each part.
+    const source = getCtx().createMediaElementSource(player);
+    source.connect(getCtx().destination);
+    stemSourceNodes.set(stem, source);
     player.preload = isMobileViewport() ? "metadata" : "auto";
     preserveMediaPitch(player);
     player.playbackRate = playbackRate;
@@ -2089,7 +2113,7 @@ const updateSelectionUI = () => {
 };
 
 const updatePlayButton = () => {
-  const isPlaying = !!ws?.isPlaying();
+  const isPlaying = stemHoldingMaster || !!ws?.isPlaying();
   for (const button of [SELECTORS.btnPlay, SELECTORS.btnFsPlay]) {
     button.classList.toggle("is-playing", isPlaying);
     button.setAttribute("aria-label", isPlaying ? "一時停止" : "再生");
@@ -2117,6 +2141,13 @@ const updatePlaybackModeButtons = () => {
 const canPlayAudio = () => !!ws && audioAvailable && audioReady;
 
 const togglePlayback = () => {
+  if (stemHoldingMaster) {
+    pauseStems();
+    pauseVideo();
+    stopMetro();
+    updatePlayButton();
+    return;
+  }
   if (!ws || (!ws.isPlaying() && !canPlayAudio())) return;
   getCtx();
   if (ws.isPlaying()) {
@@ -3199,6 +3230,8 @@ const initVideoPlayer = videoUrl => {
 const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   if (ws) {
     stopMetro();
+    masterSourceNode?.disconnect();
+    masterSourceNode = null;
     ws.destroy();
     ws = null;
   }
@@ -3228,6 +3261,8 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     plugins: [RegionsPlugin.create()],
   });
 
+  masterSourceNode = getCtx().createMediaElementSource(ws.getMediaElement());
+  masterSourceNode.connect(getCtx().destination);
   if (currentStemAssets && !isMobileViewport()) initStemPlayers(currentStemAssets);
   applyMusicVolume(SELECTORS.volMusic.value);
   ws.setPlaybackRate?.(playbackRate, true);
@@ -3469,6 +3504,7 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   });
 
   ws.on("pause", () => {
+    if (stemHoldingMaster || ws.isPlaying()) return;
     logPlaybackDiagnostic("audio-pause", mediaDiagnosticDetails(audioMedia));
     pauseVideo();
     pauseStems();

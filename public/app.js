@@ -2422,6 +2422,7 @@ var mediaSyncAction = ({
 
 // frontend/src/stem-transport.js
 var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () => {
+}, holdMaster = () => () => {
 } }) => {
   let players = {};
   let mix = {};
@@ -2432,6 +2433,40 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
   let masterWaiting = false;
   let generation = 0;
   let volume = 1;
+  let releaseMaster = null;
+  const preparations = /* @__PURE__ */ new Set();
+  const cancelPreparation = (resume = false) => {
+    for (const cancel of [...preparations]) cancel();
+    const release = releaseMaster;
+    releaseMaster = null;
+    release?.(resume);
+  };
+  const prepare = (player, time) => new Promise((resolve, reject) => {
+    let timeout;
+    const finish = (error) => {
+      clearTimeout(timeout);
+      preparations.delete(cancel);
+      for (const event of ["seeked", "canplay", "error"]) player.removeEventListener(event, ready);
+      error ? reject(error) : resolve();
+    };
+    const cancel = () => finish(new Error("Superseded playback"));
+    const ready = () => {
+      if (player.error) finish(new Error("Stem unavailable"));
+      else if (player.readyState >= 3 && !player.seeking) finish();
+    };
+    preparations.add(cancel);
+    for (const event of ["seeked", "canplay", "error"]) player.addEventListener(event, ready);
+    timeout = setTimeout(() => finish(new Error("Stem seek timed out")), 5e3);
+    if (Math.abs(player.currentTime - time) > 5e-3) {
+      try {
+        player.currentTime = time;
+      } catch (error) {
+        finish(error);
+        return;
+      }
+    }
+    ready();
+  });
   const blocked = /* @__PURE__ */ new Set();
   const listeners = [];
   const snapshot = () => ({ state, failures: [...failures], useOriginalMix: state !== "stems" && state !== "silent" });
@@ -2450,9 +2485,11 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
       if (Math.abs(player.playbackRate - getRate()) > 1e-3) player.playbackRate = getRate();
       if (force && player.readyState >= 1) {
         maximumDrift = Math.max(maximumDrift, Math.abs(player.currentTime - time));
-        try {
-          player.currentTime = time;
-        } catch {
+        if (Math.abs(player.currentTime - time) > 0.02) {
+          try {
+            player.currentTime = time;
+          } catch {
+          }
         }
       }
     }
@@ -2462,11 +2499,14 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
   const fail = (names) => {
     failures = [.../* @__PURE__ */ new Set([...failures, ...names])];
     generation += 1;
+    cancelPreparation(true);
     silencePlayers();
     state = baseState();
     notify();
   };
   const play = async () => {
+    if (state === "starting") return false;
+    if (state === "stems") return true;
     const token = ++generation;
     silencePlayers();
     state = baseState();
@@ -2492,7 +2532,27 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
       pause();
       return false;
     }
-    sync(getTime(), { force: true });
+    releaseMaster = holdMaster();
+    silencePlayers();
+    const anchor = getTime();
+    const prepared = await Promise.allSettled(names.map((name) => prepare(players[name], anchor)));
+    if (token !== generation) return false;
+    const unavailable = names.filter((_, i3) => prepared[i3].status === "rejected");
+    if (unavailable.length) {
+      fail(unavailable);
+      return false;
+    }
+    const resumed = names.map((name) => players[name].play());
+    const release = releaseMaster;
+    releaseMaster = null;
+    release?.(true);
+    const started = await Promise.allSettled(resumed);
+    if (token !== generation) return false;
+    const rejected = names.filter((_, i3) => started[i3].status === "rejected");
+    if (rejected.length) {
+      fail(rejected);
+      return false;
+    }
     state = "stems";
     notify();
     for (const name of names) players[name].muted = false;
@@ -2500,6 +2560,7 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
   };
   const pause = () => {
     generation += 1;
+    cancelPreparation();
     silencePlayers();
     masterWaiting = false;
     state = baseState();
@@ -2516,6 +2577,10 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
       player.volume = volume * Math.min(100, Math.max(0, Number(mix[name]) || 0)) / 100;
     }
     if (changed) {
+      generation += 1;
+      cancelPreparation(true);
+      silencePlayers();
+      state = baseState();
       if (isPlaying()) void play();
       else pause();
     }
@@ -2564,21 +2629,26 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
   };
   const retry = () => {
     generation += 1;
+    cancelPreparation(true);
     failures = [];
     manualOriginal = false;
     blocked.clear();
+    silencePlayers();
+    state = baseState();
     for (const player of Object.values(players)) if (player.error) player.load();
     return play();
   };
   const useOriginal = () => {
     manualOriginal = true;
     generation += 1;
+    cancelPreparation(true);
     silencePlayers();
     state = baseState();
     notify();
   };
   const destroy = () => {
     generation += 1;
+    cancelPreparation();
     listeners.splice(0).forEach((remove) => remove());
     silencePlayers();
     players = {};
@@ -2983,6 +3053,8 @@ var audioReady = false;
 var videoAvailable = true;
 var playbackRate = 1;
 var audioCtx = null;
+var masterSourceNode = null;
+var stemSourceNodes = /* @__PURE__ */ new Map();
 var scheduledClickVoices = /* @__PURE__ */ new Set();
 var customLoopRange = null;
 var waveformSelectionEl = null;
@@ -3003,6 +3075,7 @@ var lastVideoSyncAt = 0;
 var videoClickTimer = 0;
 var stemPlayers = {};
 var stemReady = false;
+var stemHoldingMaster = false;
 var currentStemAssets = null;
 var mobileStemMixActivated = false;
 var stemExportInProgress = false;
@@ -3642,7 +3715,19 @@ var hasStemAssets = (assets) => !!assets?.stems && STEM_NAMES.every((stem) => ty
 var stemTransport = createStemTransport({
   getTime: () => ws?.getCurrentTime() ?? 0,
   getRate: () => playbackRate,
-  isPlaying: () => !!ws?.isPlaying(),
+  isPlaying: () => stemHoldingMaster || !!ws?.isPlaying(),
+  holdMaster: () => {
+    const master = ws;
+    const resume = !!master?.isPlaying();
+    stemHoldingMaster = true;
+    stopMetro();
+    pauseVideo();
+    master?.pause();
+    return (shouldResume) => {
+      stemHoldingMaster = false;
+      if (shouldResume && resume && ws === master) void master.play();
+    };
+  },
   onChange: () => {
     updateOriginalVolume();
     updateStemPlaybackStatus();
@@ -3661,6 +3746,8 @@ var updateOriginalVolume = () => {
 };
 var destroyStemPlayers = () => {
   stemTransport.destroy();
+  for (const source of stemSourceNodes.values()) source.disconnect();
+  stemSourceNodes.clear();
   for (const player of Object.values(stemPlayers)) {
     player.pause();
     player.removeAttribute("src");
@@ -4404,7 +4491,12 @@ var initStemPlayers = (stemAssets) => {
   destroyStemPlayers();
   if (!hasStemAssets({ stems: stemAssets })) return false;
   for (const stem of STEM_NAMES) {
-    const player = new Audio(stemAssets[stem]);
+    const player = new Audio();
+    player.crossOrigin = "anonymous";
+    player.src = stemAssets[stem];
+    const source = getCtx().createMediaElementSource(player);
+    source.connect(getCtx().destination);
+    stemSourceNodes.set(stem, source);
     player.preload = isMobileViewport() ? "metadata" : "auto";
     preserveMediaPitch(player);
     player.playbackRate = playbackRate;
@@ -4576,7 +4668,7 @@ var updateSelectionUI = () => {
   SELECTORS.loopInfo.textContent = `\u21BB ${label} ${fmt(loopRange.start)}-${fmt(loopRange.end)}`;
 };
 var updatePlayButton = () => {
-  const isPlaying = !!ws?.isPlaying();
+  const isPlaying = stemHoldingMaster || !!ws?.isPlaying();
   for (const button of [SELECTORS.btnPlay, SELECTORS.btnFsPlay]) {
     button.classList.toggle("is-playing", isPlaying);
     button.setAttribute("aria-label", isPlaying ? "\u4E00\u6642\u505C\u6B62" : "\u518D\u751F");
@@ -4599,6 +4691,13 @@ var updatePlaybackModeButtons = () => {
 };
 var canPlayAudio = () => !!ws && audioAvailable && audioReady;
 var togglePlayback = () => {
+  if (stemHoldingMaster) {
+    pauseStems();
+    pauseVideo();
+    stopMetro();
+    updatePlayButton();
+    return;
+  }
   if (!ws || !ws.isPlaying() && !canPlayAudio()) return;
   getCtx();
   if (ws.isPlaying()) {
@@ -5570,6 +5669,8 @@ var initVideoPlayer = (videoUrl) => {
 var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   if (ws) {
     stopMetro();
+    masterSourceNode?.disconnect();
+    masterSourceNode = null;
     ws.destroy();
     ws = null;
   }
@@ -5595,6 +5696,8 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     barRadius: 2,
     plugins: [d2.create()]
   });
+  masterSourceNode = getCtx().createMediaElementSource(ws.getMediaElement());
+  masterSourceNode.connect(getCtx().destination);
   if (currentStemAssets && !isMobileViewport()) initStemPlayers(currentStemAssets);
   applyMusicVolume(SELECTORS.volMusic.value);
   ws.setPlaybackRate?.(playbackRate, true);
@@ -5831,6 +5934,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer();
   });
   ws.on("pause", () => {
+    if (stemHoldingMaster || ws.isPlaying()) return;
     logPlaybackDiagnostic("audio-pause", mediaDiagnosticDetails(audioMedia));
     pauseVideo();
     pauseStems();
