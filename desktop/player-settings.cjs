@@ -11,6 +11,8 @@ const PLAYER_SETTING_KEYS = new Set([
   "sidebarFolderCollapsed",
   "sidebarRootOrder",
   "lastStructureSessionId",
+  "lastOpenedAt",
+  "librarySort",
   "stemMix",
   "stemLastVolume",
   "stemMixMode",

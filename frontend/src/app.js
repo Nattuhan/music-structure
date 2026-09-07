@@ -5,7 +5,9 @@ import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "./
 import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
 import { extractWaveformPeaks } from "./waveform-peaks.js";
-import { mediaSyncAction, planStemPlayback, stemGroupSyncAction } from "./playback-sync.js";
+import { mediaSyncAction, planStemPlayback } from "./playback-sync.js";
+import { createStemTransport } from "./stem-transport.js";
+import { createMetronome } from "./metronome.js";
 import { videoClickAction } from "./video-gestures.js";
 
 const lucide = { createIcons: renderIcons };
@@ -37,7 +39,6 @@ const SELECTORS = {
   sessionPanel: document.getElementById("session-panel"),
   sidebarList: document.getElementById("sidebar-list"),
   sessionSearch: document.getElementById("session-search"),
-  sessionFilter: document.getElementById("session-filter"),
   sessionSort: document.getElementById("session-sort"),
   scoreHistoryPanel: document.getElementById("score-history-panel"),
   scoreHistoryList: document.getElementById("score-history-list"),
@@ -315,7 +316,6 @@ let currentData = null;
 let currentId = null;
 let analysisForce = false;
 let currentSidebarItems = [];
-const practicedThisPage = new Set();
 let currentPlaybackGroup = null;
 let currentJobId = null;
 let currentJobStartedAt = null;
@@ -334,11 +334,6 @@ let audioReady = false;
 let videoAvailable = true;
 let playbackRate = 1;
 let audioCtx = null;
-let metroRafId = 0;
-let metroGeneration = 0;
-let nextBeatIndex = 0;
-let metroResumeAtMs = 0;
-let lastMetroTime = 0;
 const scheduledClickVoices = new Set();
 let customLoopRange = null;
 let waveformSelectionEl = null;
@@ -358,10 +353,7 @@ let editingScoreResult = null;
 let lastVideoSyncAt = 0;
 let videoClickTimer = 0;
 let stemPlayers = {};
-let stemGainNodes = {};
-let stemSourceNodes = {};
 let stemReady = false;
-let stemsAudible = false;
 let currentStemAssets = null;
 let mobileStemMixActivated = false;
 let stemExportInProgress = false;
@@ -848,8 +840,7 @@ const showContextMenu = (event, actions) => {
 const mergeLibraryMetadata = (sessionId, updated) => {
   const metadata = {
     tags: Array.isArray(updated.tags) ? updated.tags : [],
-    lastPracticedAt: updated.lastPracticedAt || null,
-    practiceCount: Number(updated.practiceCount || 0),
+    lastOpenedAt: updated.lastOpenedAt || null,
   };
   currentSidebarItems = currentSidebarItems.map(item => item.id === sessionId ? { ...item, ...metadata } : item);
   if (currentData?.id === sessionId) currentData = { ...currentData, ...metadata };
@@ -879,10 +870,15 @@ const editSessionTags = async item => {
   }
 };
 
-const markCurrentSessionPracticed = () => {
-  if (!hasServer || staticLibraryMode || !currentId || practicedThisPage.has(currentId)) return;
-  practicedThisPage.add(currentId);
-  saveLibraryMetadata(currentId, { played: true }).catch(() => practicedThisPage.delete(currentId));
+const markSessionOpened = id => {
+  const openedAt = new Date().toISOString();
+  // The read-only viewer also needs a useful local order, without cloud writes.
+  const timestamps = { ...(cfg().lastOpenedAt || {}), [id]: openedAt };
+  const ids = new Set(currentSidebarItems.map(item => item.id));
+  saveCfg("lastOpenedAt", Object.fromEntries(Object.entries(timestamps).filter(([key]) => ids.has(key))));
+  currentSidebarItems = currentSidebarItems.map(item => item.id === id ? { ...item, lastOpenedAt: openedAt } : item);
+  renderSidebar(currentSidebarItems);
+  if (hasServer && !staticLibraryMode) void saveLibraryMetadata(id, { opened: true }).catch(() => {});
 };
 
 const createSessionRow = (item, items, containerId = "root") => {
@@ -893,8 +889,7 @@ const createSessionRow = (item, items, containerId = "root") => {
   row.dataset.containerId = containerId;
   row.draggable = false;
   const tags = Array.isArray(item.tags) ? item.tags : [];
-  const practiced = item.lastPracticedAt ? "練習済み" : "未練習";
-  row.innerHTML = `<div class="si-body"><div class="si-title">${escapeHtml(item.title)}</div><div class="si-meta">♩${escapeHtml(getDisplayBpm(item))} · ${escapeHtml(item.date)} · ${practiced}${tags.length ? ` · <span class="si-tags">${escapeHtml(tags.join(" / "))}</span>` : ""}</div></div>`;
+  row.innerHTML = `<div class="si-body"><div class="si-title">${escapeHtml(item.title)}</div><div class="si-meta">♩${escapeHtml(getDisplayBpm(item))} · ${escapeHtml(item.date)}${tags.length ? ` · <span class="si-tags">${escapeHtml(tags.join(" / "))}</span>` : ""}</div></div>`;
   row.addEventListener("pointerdown", event => {
     if (!hasServer || event.button !== 0 || event.pointerType === "touch" || event.ctrlKey || event.metaKey || event.shiftKey) return;
     sidebarSessionDrag = {
@@ -1073,27 +1068,41 @@ const setStemMixMode = (stem, type) => {
 };
 const hasStemAssets = assets =>
   !!assets?.stems && STEM_NAMES.every(stem => typeof assets.stems[stem] === "string" && assets.stems[stem]);
+const stemTransport = createStemTransport({
+  getTime: () => ws?.getCurrentTime() ?? 0,
+  getRate: () => playbackRate,
+  isPlaying: () => !!ws?.isPlaying(),
+  onChange: () => { updateOriginalVolume(); updateStemPlaybackStatus(); },
+  onSync: (audioTime, drift, stemCount) => logPlaybackDiagnostic("stem-resync", {
+    audioTime, drift, stemCount, playbackRate, forced: 1,
+  }),
+});
+const updateOriginalVolume = () => {
+  const volume = Math.min(1, Math.max(0, Number(isMobileViewport() ? 100 : SELECTORS.volMusic.value) / 100));
+  ws?.setVolume(!stemReady || stemTransport.snapshot().useOriginalMix ? volume : 0);
+};
 const destroyStemPlayers = () => {
+  stemTransport.destroy();
   for (const player of Object.values(stemPlayers)) {
     player.pause();
     player.removeAttribute("src");
     player.load();
   }
-  for (const node of Object.values(stemGainNodes)) node.disconnect();
-  for (const node of Object.values(stemSourceNodes)) node.disconnect();
   stemPlayers = {};
-  stemGainNodes = {};
-  stemSourceNodes = {};
   stemReady = false;
-  stemsAudible = false;
 };
-
 const updateStemPlaybackStatus = () => {
   if (!SELECTORS.stemStatus || !currentStemAssets) return;
-  SELECTORS.stemStatus.className = "stem-status ok";
-  SELECTORS.stemStatus.textContent = isMobileViewport() && !mobileStemMixActivated
-    ? "軽量再生 · 元音源を使用（パート操作で切替）"
-    : "パート再生 · 自動同期";
+  const { state, failures } = stemTransport.snapshot();
+  const labels = { vocals: "ボーカル", drums: "ドラム", bass: "ベース", other: "その他" };
+  SELECTORS.stemStatus.className = failures.length ? "stem-status err" : "stem-status ok";
+  SELECTORS.stemStatus.textContent = state === "silent" ? "全パートをミュート中"
+    : failures.length ? `${failures.map(name => labels[name]).join("・")}を再生できません · 元音源を再生`
+    : state === "starting" ? "パートを読み込み中 · 元音源を再生"
+    : state === "waiting" ? "読み込み待ち · 復帰時にパートを同期"
+    : state === "original" ? "元音源を使用" : "パート再生 · 自動同期";
+  if (isMobileViewport() && !mobileStemMixActivated) SELECTORS.stemStatus.textContent = "軽量再生 · 元音源を使用（パート操作で切替）";
+  document.getElementById("stem-recovery-actions").hidden = !failures.length && state !== "waiting" && !(state === "original" && stemReady);
 };
 
 const activateMobileStemMix = () => {
@@ -1117,7 +1126,6 @@ const applyStemMix = () => {
   const mix = getStemMix();
   const mode = getStemMixMode();
   const playbackPlan = currentStemPlaybackPlan();
-  const activeStems = new Set(playbackPlan.activeStems);
   const effectiveMusicValue = isMobileViewport() ? 100 : SELECTORS.volMusic.value;
   const masterVolume = Math.min(1, Math.max(0, (Number(effectiveMusicValue) || 0) / 100));
   for (const stem of STEM_NAMES) {
@@ -1138,20 +1146,9 @@ const applyStemMix = () => {
       controls.focus.setAttribute("aria-pressed", String(focusActive));
       controls.value.textContent = `${value}%`;
     }
-    const gain = stemGainNodes[stem];
-    if (gain) gain.gain.value = masterVolume * (value / 100);
-    const player = stemPlayers[stem];
-    if (player) {
-      player.volume = masterVolume * (value / 100);
-      if (!activeStems.has(stem)) player.pause();
-      else if (ws?.isPlaying() && player.paused) {
-        if (player.readyState >= 1) {
-          try { player.currentTime = ws.getCurrentTime(); } catch {}
-        }
-        void player.play().catch(() => {});
-      }
-    }
   }
+  if (stemReady) stemTransport.setMix(playbackPlan, mix, masterVolume);
+  updateOriginalVolume();
 };
 
 const updateStemExportScopeAvailability = () => {
@@ -1249,79 +1246,13 @@ const exportStemMix = async () => {
   }
 };
 
-const syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } = {}) => {
-  if (!stemReady) return;
-  const playbackPlan = currentStemPlaybackPlan();
-  const activeStems = new Set(playbackPlan.activeStems);
-  const players = Object.entries(stemPlayers)
-    .filter(([stem, player]) => activeStems.has(stem) && player.readyState >= 1)
-    .map(([, player]) => player);
-  if (!players.length) return;
-  const action = stemGroupSyncAction({
-    masterTime: time,
-    mediaTimes: players.map(player => player.currentTime),
-    playbackRate,
-    force,
-    allowResync: force,
-  });
-  if (action.seekTo !== null) {
-    logPlaybackDiagnostic("stem-resync", {
-      audioTime: time,
-      drift: action.maximumDrift,
-      forced: force ? 1 : 0,
-      playbackRate,
-      stemCount: players.length,
-    });
-  }
-  for (const player of players) {
-    if (action.seekTo !== null) {
-      try {
-        player.currentTime = action.seekTo;
-      } catch {}
-    }
-    if (Math.abs(player.playbackRate - action.playbackRate) > 0.001) player.playbackRate = action.playbackRate;
-  }
-};
-
-const playStems = () => {
-  if (!stemReady) return Promise.resolve(false);
-  const playbackPlan = currentStemPlaybackPlan();
-  const activeStems = new Set(playbackPlan.activeStems);
-  if (playbackPlan.useOriginalMix || activeStems.size === 0) return Promise.resolve(false);
-  syncStemPlayers(ws?.getCurrentTime?.() ?? 0, { force: true });
-  const players = Object.entries(stemPlayers)
-    .filter(([stem]) => activeStems.has(stem))
-    .map(([, player]) => player);
-  for (const [stem, player] of Object.entries(stemPlayers)) {
-    if (!activeStems.has(stem)) player.pause();
-  }
-  return Promise.allSettled(players.map(player => player.play()))
-    .then(results => {
-      stemsAudible = results.some(result => result.status === "fulfilled");
-      applyMusicVolume(SELECTORS.volMusic.value);
-      if (!stemsAudible) {
-        SELECTORS.stemStatus.className = "stem-status err";
-        const rejected = results.find(result => result.status === "rejected");
-        SELECTORS.stemStatus.textContent = rejected?.reason?.message || "パート再生がブロックされました";
-      } else {
-        SELECTORS.stemStatus.className = "stem-status ok";
-        SELECTORS.stemStatus.textContent = "準備完了";
-      }
-      return stemsAudible;
-    });
-};
-
-const pauseStems = () => {
-  for (const player of Object.values(stemPlayers)) player.pause();
-  stemsAudible = false;
-};
-
+const syncStemPlayers = (time = ws?.getCurrentTime() ?? 0, options = {}) => stemTransport.sync(time, options);
+const playStems = () => stemReady ? stemTransport.play() : Promise.resolve(false);
+const pauseStems = () => stemTransport.pause();
 const applyMusicVolume = value => {
-  const effectiveValue = isMobileViewport() ? 100 : value;
-  const volume = Math.min(1, Math.max(0, (Number(effectiveValue) || 0) / 100));
-  ws?.setVolume(stemReady && !currentStemPlaybackPlan().useOriginalMix ? 0 : volume);
-  SELECTORS.videoPlayer.volume = volume;
+  SELECTORS.videoPlayer.volume = Math.min(1, Math.max(0, Number(isMobileViewport() ? 100 : value) / 100));
   applyStemMix();
+  updateOriginalVolume();
 };
 
 const preserveMediaPitch = media => {
@@ -1341,6 +1272,7 @@ const applyPlaybackRate = value => {
   preserveMediaPitch(SELECTORS.videoPlayer);
   SELECTORS.videoPlayer.playbackRate = playbackRate;
   syncStemPlayers(ws?.getCurrentTime?.() ?? 0);
+  metronome.reset();
 };
 
 const nudgePlaybackRate = delta => {
@@ -1965,14 +1897,11 @@ const initStemPlayers = stemAssets => {
     player.preload = isMobileViewport() ? "metadata" : "auto";
     preserveMediaPitch(player);
     player.playbackRate = playbackRate;
-    player.addEventListener("loadedmetadata", () => {
-      if (ws) syncStemPlayers(ws.getCurrentTime(), { force: true });
-    });
     stemPlayers[stem] = player;
   }
   stemReady = true;
+  stemTransport.setPlayers(stemPlayers);
   applyStemMix();
-  ws?.setVolume(0);
   return true;
 };
 
@@ -2019,15 +1948,20 @@ const clearScheduledClicks = () => {
   }
 };
 
-const alignMetronomeToTime = time => {
-  const beats = getAdjustedBeats();
-  nextBeatIndex = beats.findIndex(beat => beat >= time - 0.02);
-  if (nextBeatIndex < 0) nextBeatIndex = beats.length;
-};
-
-const syncMetronome = () => {
-  alignMetronomeToTime(ws?.getCurrentTime() ?? 0);
-};
+const metronome = createMetronome({
+  getBeats: () => getAdjustedBeats(),
+  getTime: () => ws?.getCurrentTime() ?? 0,
+  getRate: () => playbackRate,
+  getAudioTime: () => getCtx().currentTime,
+  isPlaying: () => !!ws?.isPlaying() && audioAvailable && metroOn && (ws.getMediaElement()?.readyState ?? 0) >= 3,
+  emit: clickTone, clear: clearScheduledClicks,
+  requestFrame: callback => requestAnimationFrame(callback),
+  cancelFrame: id => cancelAnimationFrame(id),
+  lookAhead: () => isMobileViewport() ? 0.09 : 0.055,
+});
+const syncMetronome = () => metronome.reset();
+const startMetro = () => metronome.start();
+const stopMetro = () => metronome.stop();
 
 const seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
   if (!ws) return;
@@ -2038,52 +1972,10 @@ const seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
     const loopRange = getLoopRange();
     if (loopRange && clampedTime < loopRange.start) clampedTime = loopRange.start;
   }
-  clearScheduledClicks();
-  metroResumeAtMs = performance.now() + 120;
-  alignMetronomeToTime(clampedTime);
-  lastMetroTime = clampedTime;
+  metronome.reset(clampedTime);
   syncVideoToAudio(clampedTime, { force: true });
   ws.seekTo(clampedTime / duration);
   syncStemPlayers(clampedTime, { force: true });
-};
-
-const tickMetronome = generation => {
-  if (generation !== metroGeneration) return;
-  const beats = getAdjustedBeats();
-  if (!ws || !audioAvailable || !metroOn || !ws.isPlaying() || !beats.length) return;
-  if (performance.now() < metroResumeAtMs) {
-    metroRafId = requestAnimationFrame(() => tickMetronome(generation));
-    return;
-  }
-  const currentTime = ws.getCurrentTime();
-  if (Math.abs(currentTime - lastMetroTime) > 0.25) alignMetronomeToTime(currentTime);
-  lastMetroTime = currentTime;
-  const ctx = getCtx();
-  const lookAhead = isMobileViewport() ? 0.09 : 0.055;
-
-  while (nextBeatIndex < beats.length && beats[nextBeatIndex] <= currentTime + lookAhead) {
-    clickTone(ctx.currentTime + Math.max(0, beats[nextBeatIndex] - currentTime));
-    nextBeatIndex += 1;
-  }
-
-  metroRafId = requestAnimationFrame(() => tickMetronome(generation));
-};
-
-const startMetro = () => {
-  if (metroRafId) cancelAnimationFrame(metroRafId);
-  clearScheduledClicks();
-  metroGeneration += 1;
-  syncMetronome();
-  lastMetroTime = ws?.getCurrentTime() ?? 0;
-  metroRafId = requestAnimationFrame(() => tickMetronome(metroGeneration));
-};
-
-const stopMetro = () => {
-  if (metroRafId) cancelAnimationFrame(metroRafId);
-  metroRafId = 0;
-  metroGeneration += 1;
-  metroResumeAtMs = 0;
-  clearScheduledClicks();
 };
 
 const cancelWaveformPreviewSeek = () => {
@@ -3267,6 +3159,8 @@ const renderStemPanel = assets => {
     ? (isMobileViewport() && !mobileStemMixActivated ? "軽量再生 · 元音源を使用（パート操作で切替）" : "パート再生 · 自動同期")
     : (hasServer ? "パート生成までは元音源を再生します" : "元音源");
   applyStemMix();
+  updateStemPlaybackStatus();
+  document.getElementById("stem-recovery-actions").hidden = !available || document.getElementById("stem-recovery-actions").hidden;
   updateStemExportScopeAvailability();
 };
 
@@ -3370,6 +3264,22 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
       logPlaybackDiagnostic(`audio-${type}`, mediaDiagnosticDetails(audioMedia));
     });
   }
+  const sourceWs = ws;
+  const onMasterWaiting = () => {
+    if (ws !== sourceWs || !sourceWs.isPlaying() || audioMedia.readyState >= 3) return;
+    stemTransport.setMasterWaiting(true);
+    stopMetro();
+    pauseVideo();
+  };
+  audioMedia?.addEventListener("waiting", onMasterWaiting);
+  audioMedia?.addEventListener("stalled", onMasterWaiting);
+  audioMedia?.addEventListener("playing", () => {
+    if (ws !== sourceWs) return;
+    stemTransport.setMasterWaiting(false);
+    syncVideoToAudio(sourceWs.getCurrentTime(), { force: true });
+    playVideo();
+    if (metroOn) startMetro();
+  });
   const getRegions = () => ws.getActivePlugins()[0];
   const disableTransport = disabled => {
     for (const button of [SELECTORS.btnPlay, SELECTORS.btnRestart, SELECTORS.btnLoop, SELECTORS.btnAutoNext, SELECTORS.btnMetro, SELECTORS.btnFsPlay, SELECTORS.btnFsRestart, SELECTORS.btnFsLoop, SELECTORS.btnFsAutoNext, SELECTORS.btnFsMetro]) {
@@ -3549,7 +3459,6 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
 
   ws.on("play", () => {
     logPlaybackDiagnostic("audio-play", mediaDiagnosticDetails(audioMedia));
-    if (!SELECTORS.sectionEditor?.open) markCurrentSessionPracticed();
     applyCurrentPlaybackRate();
     syncVideoToAudio(ws.getCurrentTime(), { force: true });
     playVideo();
@@ -3569,9 +3478,10 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   });
 
   ws.on("seeking", () => {
-    lastMetroTime = ws.getCurrentTime();
-    syncVideoToAudio(lastMetroTime, { force: true });
-    syncStemPlayers(lastMetroTime, { force: true });
+    const time = ws.getCurrentTime();
+    metronome.reset(time);
+    syncVideoToAudio(time, { force: true });
+    syncStemPlayers(time, { force: true });
   });
 
   ws.on("finish", handlePlaybackFinished);
@@ -3639,6 +3549,8 @@ const setupControls = () => {
   };
   SELECTORS.btnFsAutoNext.onclick = SELECTORS.btnAutoNext.onclick;
   SELECTORS.btnGenerateStems.onclick = () => generateStems();
+  document.getElementById("btn-retry-stems").onclick = () => stemTransport.retry();
+  document.getElementById("btn-original-mix").onclick = () => stemTransport.useOriginal();
   SELECTORS.btnExportStemMix.onclick = () => exportStemMix();
   SELECTORS.btnBpmHalf.onclick = () => {
     if (!currentId) return;
@@ -4273,7 +4185,6 @@ const renderSidebar = (items, { error = "" } = {}) => {
   SELECTORS.sidebarList.innerHTML = "";
   const visibleItems = filterLibraryItems(items, {
     query: SELECTORS.sessionSearch?.value || "",
-    filter: SELECTORS.sessionFilter?.value || "all",
   });
   sidebarItemsCount = visibleItems.length;
   const validIds = new Set(items.map(item => item.id));
@@ -4539,8 +4450,11 @@ const loadHistory = async () => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const items = await response.json();
     if (!Array.isArray(items)) throw new Error("曲一覧の形式が正しくありません");
-    renderSidebar(items);
-    return items;
+    const timestamps = cfg().lastOpenedAt || {};
+    const restored = items.map(item => ({ ...item, lastOpenedAt: [item.lastOpenedAt || "", timestamps[item.id] || ""].sort().at(-1) || null }));
+    SELECTORS.sessionSort.value = cfg().librarySort || "recent";
+    renderSidebar(restored);
+    return restored;
   } catch (error) {
     renderSidebar([], { error: error?.message || "通信を確認して再読み込みしてください" });
     if (staticLibraryMode && isMobileViewport()) openMobileSidebar();
@@ -4574,6 +4488,7 @@ const loadResult = async (session, { autoplay = false } = {}) => {
     return;
   }
   showResult(await response.json(), id, { autoplay });
+  markSessionOpened(id);
 };
 
 const deleteResult = async (id, currentList) => {
@@ -5244,8 +5159,7 @@ const finishSectionEditorBoundaryDrag = event => {
 SELECTORS.sectionEditorRows?.addEventListener("pointerup", finishSectionEditorBoundaryDrag);
 SELECTORS.sectionEditorRows?.addEventListener("pointercancel", finishSectionEditorBoundaryDrag);
 SELECTORS.sessionSearch?.addEventListener("input", () => renderSidebar(currentSidebarItems));
-SELECTORS.sessionFilter?.addEventListener("change", () => renderSidebar(currentSidebarItems));
-SELECTORS.sessionSort?.addEventListener("change", () => renderSidebar(currentSidebarItems));
+SELECTORS.sessionSort?.addEventListener("change", () => { saveCfg("librarySort", SELECTORS.sessionSort.value); renderSidebar(currentSidebarItems); });
 SELECTORS.queueList?.addEventListener("click", event => {
   const button = event.target.closest("[data-job-id]");
   if (!button) return;

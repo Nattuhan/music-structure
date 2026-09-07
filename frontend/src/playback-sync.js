@@ -6,7 +6,7 @@ export const planStemPlayback = ({ stemNames, mix, mobile, activated }) => {
   }
   const activeStems = stemNames.filter(name => Number(mix?.[name] ?? 0) > 0);
   return {
-    useOriginalMix: activeStems.length === 0,
+    useOriginalMix: false,
     activeStems,
   };
 };

@@ -235,7 +235,7 @@ body {
 
 .library-control-row {
   display: grid;
-  grid-template-columns: 1fr 1.35fr;
+  grid-template-columns: 1fr;
   gap: 6px;
 }
 
@@ -4463,3 +4463,7 @@ select:focus,
   body.video-fullscreen-mode .practice-controls .tempo-controls input[type="range"] { width: 58px; }
   body.video-fullscreen-mode .practice-controls .bpm-actions .mini-btn { padding-inline: 5px; }
 }
+
+.stem-recovery-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.stem-recovery-actions[hidden] { display: none; }
+#session-sort { width: 100%; }

@@ -29,13 +29,9 @@
       <div class="library-controls">
         <input id="session-search" type="search" placeholder="曲名・タグを検索" aria-label="曲名・タグを検索">
         <div class="library-control-row">
-          <select id="session-filter" aria-label="練習状態で絞り込み">
-            <option value="all">すべて</option>
-            <option value="unpracticed">未練習のみ</option>
-          </select>
           <select id="session-sort" aria-label="曲の並び順">
             <option value="manual">フォルダー順</option>
-            <option value="recent">最近練習した順</option>
+            <option value="recent" selected>最後に開いた順</option>
             <option value="added">最近追加した順</option>
             <option value="title">曲名順</option>
           </select>
@@ -224,7 +220,11 @@
               <button class="mini-btn" id="btn-generate-stems" type="button"><i data-lucide="audio-waveform"></i><span>生成</span></button>
             </div>
           </div>
-          <div class="stem-status" id="stem-status"></div>
+          <div class="stem-status" id="stem-status" role="status"></div>
+          <div id="stem-recovery-actions" class="stem-recovery-actions" hidden>
+            <button id="btn-retry-stems" class="mini-btn" type="button">パートを再試行</button>
+            <button id="btn-original-mix" class="mini-btn" type="button">元音源を使用</button>
+          </div>
           <div class="stem-mixer" id="stem-mixer">
             <div class="stem-row" data-stem="vocals">
               <div class="stem-mode-buttons">

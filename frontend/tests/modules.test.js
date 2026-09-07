@@ -10,8 +10,8 @@ import { extractWaveformPeaks } from "../src/waveform-peaks.js";
 import { videoClickAction } from "../src/video-gestures.js";
 
 const sessions = [
-  { id: "a", title: "Beta", tags: ["ライブ"], date: "2026-01-01", lastPracticedAt: null },
-  { id: "b", title: "Alpha", tags: [], date: "2026-02-01", lastPracticedAt: "2026-03-01T00:00:00Z" },
+  { id: "a", title: "Beta", tags: ["ライブ"], date: "2026-01-01", lastOpenedAt: null },
+  { id: "b", title: "Alpha", tags: [], date: "2026-02-01", lastOpenedAt: "2026-03-01T00:00:00Z" },
 ];
 
 test("ループ開始直後のメディア時刻の丸め誤差を再シークしない", () => {
@@ -32,12 +32,12 @@ test("ドラッグ範囲の長さを保ったまま曲端で止める", () => {
   assert.deepEqual(moveCustomLoopRange(range, -10, 8), { start: 0, end: 2, kind: "custom" });
 });
 
-test("ライブラリを曲名・タグ・未練習で絞り込める", () => {
+test("ライブラリを曲名・タグで絞り込める", () => {
   assert.deepEqual(filterLibraryItems(sessions, { query: "ライブ" }).map(item => item.id), ["a"]);
-  assert.deepEqual(filterLibraryItems(sessions, { filter: "unpracticed" }).map(item => item.id), ["a"]);
+  assert.deepEqual(filterLibraryItems(sessions, { query: "beta" }).map(item => item.id), ["a"]);
 });
 
-test("ライブラリを最近練習した順と曲名順に並べられる", () => {
+test("ライブラリを最後に開いた順と曲名順に並べられる", () => {
   assert.deepEqual(sortLibraryItems(sessions, "recent").map(item => item.id), ["b", "a"]);
   assert.deepEqual(sortLibraryItems(sessions, "title").map(item => item.id), ["b", "a"]);
 });
