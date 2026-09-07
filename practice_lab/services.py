@@ -27,6 +27,7 @@ from .optional_features import mac_analysis_runtime_executable, windows_cpu_runt
 from .process_manager import job_process_context, run_process, running_process, start_process, terminate_process, unregister_process
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
 from .timing import normalize_section_bar_ranges, normalize_tempo_grid
+from .loudness import measure_stem_gain
 
 REPO_ROOT = SOURCE_ROOT
 ANALYZE_SCRIPT = SOURCE_ROOT / "scripts" / "analyze_audio.py"
@@ -555,13 +556,15 @@ def convert_audio_to_wav(source: Path, destination: Path) -> None:
     )
 
 
-def convert_stem_wav_to_mp3(source: Path, destination: Path) -> None:
+def convert_stem_wav_to_mp3(source: Path, destination: Path, *, gain_db: float = 0.0) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     run_process(
         [
             "ffmpeg",
             "-i",
             str(source),
+            "-af",
+            f"volume={gain_db:.6f}dB",
             "-c:a",
             "libmp3lame",
             "-b:a",
@@ -1392,6 +1395,9 @@ def create_stems(video_id: str, job_id: str | None = None) -> dict:
     set_job_status(job_id, "queued", "Queued stem separation")
     stem_wav_dir = run_stem_splitter(audio_file, video_id, job_id=job_id)
     raise_if_job_canceled(job_id)
+    set_job_status(job_id, "stems", "Matching playback loudness")
+    gain_db = measure_stem_gain([stem_wav_dir / f"{stem}.wav" for stem in STEM_NAMES])
+    raise_if_job_canceled(job_id)
     public_stem_dir = PUBLIC_STEMS_DIR / video_id
     if public_stem_dir.exists():
         shutil.rmtree(public_stem_dir)
@@ -1400,7 +1406,7 @@ def create_stems(video_id: str, job_id: str | None = None) -> dict:
     for stem in STEM_NAMES:
         raise_if_job_canceled(job_id)
         set_job_status(job_id, "stems", f"Encoding {stem}")
-        convert_stem_wav_to_mp3(stem_wav_dir / f"{stem}.wav", public_stem_dir / f"{stem}.mp3")
+        convert_stem_wav_to_mp3(stem_wav_dir / f"{stem}.wav", public_stem_dir / f"{stem}.mp3", gain_db=gain_db)
 
     raise_if_job_canceled(job_id)
     data = attach_session_assets(json.loads(result_file.read_text(encoding="utf-8")))
