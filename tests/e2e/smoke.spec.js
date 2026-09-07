@@ -116,9 +116,9 @@ test("PCの動画全画面でも練習情報と操作を見渡せる", async ({ 
   await page.goto("/");
   await expect(page.locator(".kbd-hint")).toHaveCount(0);
   await expect(page.locator("#meta-bars")).toBeVisible();
-  await expect(page.locator("#btn-bpm-half")).toHaveText("半分");
-  await expect(page.locator("#btn-bpm-double")).toHaveText("2倍");
-  await expect(page.locator("#btn-bpm-reset")).toHaveText("元に戻す");
+  await expect(page.locator("#btn-bpm-half")).toHaveText("½");
+  await expect(page.locator("#btn-bpm-double")).toHaveText("×2");
+  await expect(page.locator("#btn-bpm-reset")).toHaveAccessibleName("解析時のBPMに戻す");
   const normalRows = await page.locator(".practice-controls > .transport-bar, .practice-controls > .vol-bar").evaluateAll(rows =>
     rows.map(row => row.getBoundingClientRect().top),
   );

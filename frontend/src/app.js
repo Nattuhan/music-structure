@@ -1979,9 +1979,7 @@ const metronome = createMetronome({
   getAudioTime: () => getCtx().currentTime,
   isPlaying: () => !!ws?.isPlaying() && audioAvailable && metroOn && (ws.getMediaElement()?.readyState ?? 0) >= 3,
   emit: clickTone, clear: clearScheduledClicks,
-  requestFrame: callback => requestAnimationFrame(callback),
-  cancelFrame: id => cancelAnimationFrame(id),
-  lookAhead: () => isMobileViewport() ? 0.09 : 0.055,
+  lookAhead: () => 0.12,
 });
 const syncMetronome = () => metronome.reset();
 const startMetro = () => metronome.start();

@@ -2670,12 +2670,12 @@ var createMetronome = ({
   isPlaying,
   emit,
   clear,
-  requestFrame,
-  cancelFrame,
-  lookAhead = () => 0.055
+  schedule = (callback) => setTimeout(callback, 25),
+  cancel = clearTimeout,
+  lookAhead = () => 0.12
 }) => {
   let generation = 0;
-  let frame = 0;
+  let timer = 0;
   let active = false;
   let nextBeat = 0;
   let lastTime = 0;
@@ -2701,13 +2701,13 @@ var createMetronome = ({
         nextBeat += 1;
       }
     }
-    frame = requestFrame(() => tick(token));
+    timer = schedule(() => tick(token));
   };
   const stop = () => {
     active = false;
     generation += 1;
-    if (frame) cancelFrame(frame);
-    frame = 0;
+    if (timer) cancel(timer);
+    timer = 0;
     clear();
   };
   const start = (time = getTime()) => {
@@ -2715,7 +2715,7 @@ var createMetronome = ({
     active = true;
     align(time);
     const token = generation;
-    frame = requestFrame(() => tick(token));
+    timer = schedule(() => tick(token));
   };
   const reset = (time = getTime()) => {
     if (active) start(time);
@@ -4555,9 +4555,7 @@ var metronome = createMetronome({
   isPlaying: () => !!ws?.isPlaying() && audioAvailable && metroOn && (ws.getMediaElement()?.readyState ?? 0) >= 3,
   emit: clickTone,
   clear: clearScheduledClicks,
-  requestFrame: (callback) => requestAnimationFrame(callback),
-  cancelFrame: (id) => cancelAnimationFrame(id),
-  lookAhead: () => isMobileViewport() ? 0.09 : 0.055
+  lookAhead: () => 0.12
 });
 var syncMetronome = () => metronome.reset();
 var startMetro = () => metronome.start();

@@ -190,8 +190,8 @@ const metroFixture = () => {
     getBeats: () => beats, getTime: () => clock.time, getRate: () => clock.rate,
     getAudioTime: () => clock.audioTime, isPlaying: () => clock.playing,
     emit: time => scheduled.push(time), clear: () => { clears++; scheduled.length = 0; },
-    requestFrame: callback => { frames.set(++id, callback); return id; },
-    cancelFrame: id => frames.delete(id),
+    schedule: callback => { frames.set(++id, callback); return id; },
+    cancel: id => frames.delete(id),
   });
   const tick = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback()); };
   return { clock, metro, tick, scheduled, frames, get clears() { return clears; }, setBeats: value => { beats = value; } };
@@ -207,7 +207,7 @@ test('クリック予約は0.5倍・等速・1.5倍で実時間へ換算する',
   }
 });
 
-test('速度変更・ループ・停止でクリック予約を破棄し、フレームを多重化しない', () => {
+test('速度変更・ループ・停止でクリック予約を破棄し、タイマーを多重化しない', () => {
   const f = metroFixture();
   f.metro.start(); f.tick();
   f.clock.rate = 0.5;

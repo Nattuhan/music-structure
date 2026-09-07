@@ -508,6 +508,8 @@ async function createWindow() {
     show: false,
     backgroundColor: "#111827",
     webPreferences: {
+      // Audio beat reservations must continue while the window is hidden or minimized.
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,

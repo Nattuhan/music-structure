@@ -4347,8 +4347,17 @@ select:focus,
 .vol-bar .vol-item { min-width: 0; }
 .vol-lbl { white-space: nowrap; }
 .bpm-item { margin-left: 0; gap: 9px; }
-.bpm-reading { gap: 6px; white-space: nowrap; }
-.bpm-reading .stat-val { min-width: 34px; font-size: 20px; text-align: right; }
+.bpm-reading { gap: 7px; white-space: nowrap; }
+.bpm-reading .stat-lbl { font-size: 10px; letter-spacing: .12em; }
+.bpm-item .bpm-actions { gap: 0; padding: 3px; border: 1px solid var(--gray-3); border-radius: 10px; background: rgba(255,255,255,.025); }
+.bpm-item .bpm-actions .mini-btn { border: 0; border-radius: 6px; background: transparent; min-width: 30px; padding: 4px 8px; font-size: 12px; }
+.bpm-item .bpm-actions .mini-btn:hover:not(:disabled) { background: rgba(255,255,255,.08); }
+.bpm-item .bpm-actions .mini-btn svg { width: 13px; height: 13px; }
+.bpm-item .bpm-actions #btn-bpm-save { color: var(--orange); }
+.bpm-item .bpm-actions #btn-click-offset { margin-left: 4px; border-left: 1px solid var(--gray-3); border-radius: 0 6px 6px 0; }
+.bpm-item .bpm-actions #btn-click-offset.active { background: rgba(240,128,72,.14); color: var(--orange); }
+.bpm-item .bpm-actions .mini-btn:disabled { opacity: .3; }
+.bpm-reading .stat-val { min-width: 38px; font-size: 23px; font-weight: 650; letter-spacing: -.04em; font-variant-numeric: tabular-nums; text-align: right; }
 .bpm-actions { flex-wrap: nowrap; }
 .bpm-actions .mini-btn { min-height: 30px; padding: 4px 7px; white-space: nowrap; }
 .speed-item { margin-left: 0; }

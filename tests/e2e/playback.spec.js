@@ -105,3 +105,23 @@ test('再生せず曲を開くだけで最後に開いた日時を保存し、�
   await page.reload();
   await expect(page.locator('#session-sort')).toHaveValue('title');
 });
+
+test('画面描画が停止してもクリック予約が続き、停止時には解除する', async ({ page }) => {
+  await start(page);
+  await page.evaluate(() => {
+    window.__clicks = [];
+    const start = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (time) {
+      window.__clicks.push(time);
+      return start.call(this, time);
+    };
+    // Hidden windows can stop rendering entirely; audio must not depend on it.
+    window.requestAnimationFrame = () => 0;
+  });
+  await page.locator('#btn-metro').click();
+  await expect.poll(() => page.evaluate(() => window.__clicks.length)).toBeGreaterThanOrEqual(3);
+  await page.locator('#btn-play').click();
+  const count = await page.evaluate(() => window.__clicks.length);
+  await page.waitForTimeout(650);
+  expect(await page.evaluate(() => window.__clicks.length)).toBe(count);
+});
