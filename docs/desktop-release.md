@@ -48,6 +48,7 @@ npm run desktop:dist -- --publish=never
 - `latest.yml`
 - Windows差分更新用の`.exe.blockmap`
 - `PracticeLab-1.2.3-arm64.dmg`
+- `PracticeLab-1.2.3-arm64.zip`と`latest-mac.yml`（署名済みMac版の自動更新用）
 - `PracticeLab-Windows-CPU-1.2.3.zip`（アプリから必要時に取得）
 - `PracticeLab-Score-Windows-1.2.3.zip`（アプリから必要時に取得）
 - `PracticeLab-Score-macOS-arm64-1.2.3.zip`（アプリから必要時に取得）
@@ -55,8 +56,8 @@ npm run desktop:dist -- --publish=never
 - `PracticeLab-SHA256SUMS.txt`
 
 Windows版は起動後にGitHub Releasesを確認し、新版を取得します。ダウンロード完了後、
-画面上の更新ボタンから再起動して適用できます。Mac版はGitHub Releaseから新しいDMGを
-取得して手動で入れ替えます。
+画面上の更新ボタンから再起動して適用できます。署名済みMac版も同様に更新できます。未署名の旧版からは一度DMGで入れ替えます。
+Mac更新用ZIPは署名・公証後にハッシュを計算します。署名前の差分情報は使わず、ZIP全体を取得します。
 
 ## 署名と公開の方針
 

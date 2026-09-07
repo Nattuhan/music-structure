@@ -73,6 +73,10 @@ def main() -> None:
             raise RuntimeError("Notarized artifact SHA-256 mismatch")
     if artifact.suffix == ".app":
         verify_app(artifact, args.version, args.runtime)
+    elif artifact.suffix == ".zip":
+        with tempfile.TemporaryDirectory(prefix="practicelab-update-check-") as directory:
+            subprocess.run(["ditto", "-x", "-k", str(artifact), directory], check=True)
+            verify_app(Path(directory) / "PracticeLab.app", args.version, args.runtime)
     elif artifact.suffix == ".dmg":
         result = subprocess.run(["hdiutil", "attach", "-readonly", "-nobrowse", "-plist", str(artifact)], capture_output=True, check=True)
         mounts = [entry["mount-point"] for entry in plistlib.loads(result.stdout)["system-entities"] if "mount-point" in entry]
@@ -84,7 +88,7 @@ def main() -> None:
             for mount in mounts:
                 subprocess.run(["hdiutil", "detach", mount], check=True)
     else:
-        raise ValueError("Expected a .app or .dmg")
+        raise ValueError("Expected a .app, .zip or .dmg")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ const fs = require("fs");
 const net = require("net");
 const path = require("path");
 const os = require("os");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const { randomBytes } = require("crypto");
 const {
   MAX_FILE_BYTES: MAX_CONNECTION_FILE_BYTES,
@@ -13,7 +13,7 @@ const {
 } = require("./cloud-connection-transfer.cjs");
 const { cloudSettingsFromLegacyEnv, parseEnv, stripLegacyR2Settings } = require("./legacy-cloud-settings.cjs");
 const { sanitizePlayerSettings } = require("./player-settings.cjs");
-const { RELEASES_LATEST_URL, getUpdateMode } = require("./update-policy.cjs");
+const { RELEASES_LATEST_URL, getUpdateMode, hasDeveloperIdSignature } = require("./update-policy.cjs");
 const { analysisEnvironment, sanitizeAnalysisMode } = require("./analysis-settings.cjs");
 const { createDesktopSecretsStore } = require("./desktop-secrets.cjs");
 const { appendPlaybackEvent } = require("./playback-diagnostics.cjs");
@@ -95,7 +95,7 @@ function settingsForRenderer() {
     version: app.getVersion(),
     packaged: app.isPackaged,
     platform: process.platform,
-    updateMode: getUpdateMode({ packaged: app.isPackaged, platform: process.platform }),
+    updateMode: getDesktopUpdateMode(),
   };
 }
 
@@ -362,9 +362,22 @@ function sendUpdateStatus(payload) {
   mainWindow?.webContents.send("desktop:update-status", payload);
 }
 
+let desktopUpdateMode;
+function getDesktopUpdateMode() {
+  if (desktopUpdateMode === undefined) {
+    const developerIdSigned = app.isPackaged && process.platform === "darwin" && hasDeveloperIdSignature(
+      spawnSync("/usr/bin/codesign", ["-dvv", path.resolve(process.resourcesPath, "../..")], { encoding: "utf8", timeout: 5000 }),
+    );
+    desktopUpdateMode = getUpdateMode({ packaged: app.isPackaged, platform: process.platform, developerIdSigned });
+  }
+  return desktopUpdateMode;
+}
+
 function configureUpdates() {
-  if (getUpdateMode({ packaged: app.isPackaged, platform: process.platform }) !== "automatic") return;
+  if (getDesktopUpdateMode() !== "automatic") return;
   autoUpdater.autoDownload = true;
+  // MornNotary produces a fresh signed ZIP; pre-signing blockmaps cannot be reused.
+  if (process.platform === "darwin") autoUpdater.disableDifferentialDownload = true;
   autoUpdater.on("checking-for-update", () => sendUpdateStatus({ state: "checking" }));
   autoUpdater.on("update-available", info => sendUpdateStatus({ state: "available", version: info.version }));
   autoUpdater.on("update-not-available", () => sendUpdateStatus({ state: "current" }));
@@ -384,7 +397,7 @@ function sendCommand(command) {
 }
 
 async function checkForUpdates() {
-  const mode = getUpdateMode({ packaged: app.isPackaged, platform: process.platform });
+  const mode = getDesktopUpdateMode();
   if (mode === "development") {
     const status = { state: "unsupported", message: "開発版ではアップデート確認を行いません。" };
     sendUpdateStatus(status);

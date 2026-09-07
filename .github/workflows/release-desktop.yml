@@ -314,17 +314,26 @@ jobs:
           # on the draft release before tagging; missing input must fail closed.
           gh release download "$GITHUB_REF_NAME" --dir "$notarized_dir" \
             --pattern "PracticeLab-$version-arm64.dmg" \
+            --pattern "PracticeLab-$version-arm64.zip" \
+            --pattern "latest-mac.yml" \
             --pattern "PracticeLab-Notarized-Mac-$version.sha256"
           .venv/bin/python scripts/verify_notarized_macos.py \
             "$notarized_dir/PracticeLab-$version-arm64.dmg" \
             --version "$version" --runtime \
             --expected-sha256 "$(cat "$notarized_dir/PracticeLab-Notarized-Mac-$version.sha256")"
-          cp "$notarized_dir/PracticeLab-$version-arm64.dmg" desktop/dist/installer/
+          node scripts/macos_update_metadata.cjs verify \
+            "$notarized_dir/PracticeLab-$version-arm64.zip" "$version" "$notarized_dir/latest-mac.yml"
+          .venv/bin/python scripts/verify_notarized_macos.py \
+            "$notarized_dir/PracticeLab-$version-arm64.zip" --version "$version" --runtime
+          cp "$notarized_dir/PracticeLab-$version-arm64.dmg" \
+            "$notarized_dir/PracticeLab-$version-arm64.zip" "$notarized_dir/latest-mac.yml" desktop/dist/installer/
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: PracticeLab-macOS-Apple-Silicon
           path: |
             desktop/dist/installer/*.dmg
+            desktop/dist/installer/PracticeLab-*-arm64.zip
+            desktop/dist/installer/latest-mac.yml
             desktop/dist/installer/*Analysis-macOS-arm64-*.zip
             desktop/dist/installer/*Score-macOS-arm64-*.zip
 
@@ -345,6 +354,7 @@ jobs:
           sha256sum \
             PracticeLab-Setup-*.exe \
             PracticeLab-*-arm64.dmg \
+            PracticeLab-*-arm64.zip \
             PracticeLab-Windows-CPU-*.zip \
             PracticeLab-Analysis-macOS-arm64-*.zip \
             PracticeLab-Score-*.zip \
@@ -361,6 +371,8 @@ jobs:
             release-artifacts/PracticeLab-Setup-*.exe.blockmap \
             release-artifacts/latest.yml \
             release-artifacts/PracticeLab-*-arm64.dmg \
+            release-artifacts/PracticeLab-*-arm64.zip \
+            release-artifacts/latest-mac.yml \
             release-artifacts/PracticeLab-Windows-CPU-*.zip \
             release-artifacts/PracticeLab-Analysis-macOS-arm64-*.zip \
             release-artifacts/PracticeLab-Score-*.zip \

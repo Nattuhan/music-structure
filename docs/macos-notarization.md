@@ -46,7 +46,17 @@ Actionsの署名済みArtifactをダウンロードし、`ditto`で展開しま�
 
 ## GitHub Releaseへの一般公開
 
-タグをpushする前に、検証済みDMGを同じバージョンのdraft Releaseへ置きます。`PracticeLab-Notarized-Mac-X.Y.Z.sha256`にはDMGのSHA-256だけを1行で保存して添付します。
+タグをpushする前に、検証済みDMG、公証済みアプリを含む`PracticeLab-X.Y.Z-arm64.zip`、`latest-mac.yml`を同じバージョンのdraft Releaseへ置きます。更新用ZIPはMornNotaryから受け取ったZIPを改名して利用でき、署名後の実ファイルから更新情報を生成します。
+
+```bash
+node scripts/macos_update_metadata.cjs write PracticeLab-1.2.2-arm64.zip 1.2.2 latest-mac.yml
+node scripts/macos_update_metadata.cjs verify PracticeLab-1.2.2-arm64.zip 1.2.2 latest-mac.yml
+.venv/bin/python scripts/verify_notarized_macos.py PracticeLab-1.2.2-arm64.zip --version 1.2.2 --runtime
+```
+
+CIはZIPの署名・公証と更新情報のハッシュ・サイズも検証します。アプリはDeveloper ID署名を確認したMac配布版で自動更新を有効にします。今後も同じ署名名義で公開してください。未署名版は手動更新を維持します。
+
+`PracticeLab-Notarized-Mac-X.Y.Z.sha256`にはDMGのSHA-256だけを1行で保存して添付します。
 
 タグのCIはWindows版と追加機能をビルドし、Mac側ではdraftから受け取ったDMGのハッシュ、公証、実行環境を再検証します。公証済みの入力がない場合は失敗し、ローカルビルド用のアドホック署名DMGを代わりに公開しません。Windows、Mac、公開処理のすべてが成功してから公開完了とします。
 
