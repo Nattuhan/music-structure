@@ -1,16 +1,22 @@
 ---
 name: practice-lab-release
-description: Release PracticeLab desktop apps through the tagged GitHub Actions workflow, verify the published artifacts, and optionally update the local Apple Silicon Mac from the published DMG. Use for PracticeLab version bumps, desktop releases, GitHub Release publication, or local DMG updates.
+description: Prepare and publish PracticeLab desktop releases, or update the local Apple Silicon Mac for testing. Distinguish release versioning from local builds, which preserve the existing version. Use for requested version changes, desktop releases, or local app updates.
 ---
 
 # PracticeLab デスクトップリリース
 
 リリース作成やローカルアプリ更新は、ユーザーが明示的に依頼した範囲だけ実行する。タグのpush、GitHub Release公開、`/Applications`のアプリ入れ替えを依頼から推測して勝手に行わない。
 
+## 作業範囲とバージョン
+
+- リリース作成・準備の依頼では、下記の「リリース準備」を適用する。公開は依頼された場合だけ行う。
+- 「公開せずローカルで動作確認」「修正後にこのMacのアプリを更新」などの依頼では、「ローカルビルドでこのMacを更新」を適用し、既存のバージョンを維持する。ローカル更新の依頼はバージョン変更の依頼を含まない。
+- 「次のパッチバージョンを原則とする」は、リリースに向けてバージョンを上げる際の番号の選び方であり、修正・ビルド・ローカル更新のたびに番号を上げる指示ではない。
+
 ## リリース準備
 
 1. `docs/desktop-release.md`、`.github/workflows/release-desktop.yml`、現在のタグ・Release・作業ツリーを確認する。
-2. 次のパッチバージョンを原則とし、ユーザー指定があれば従う。`package.json`と`package-lock.json`のバージョン、`RELEASE_NOTES.md`の見出し・配布物名・変更点を揃える。
+2. リリース用にバージョンを上げる場合は、次のパッチバージョンを原則とし、ユーザー指定があれば従う。`package.json`と`package-lock.json`のバージョン、`RELEASE_NOTES.md`の見出し・配布物名・変更点を揃える。
 3. フロント生成物を更新し、少なくとも次を実行する。
    - `npm run build`
    - `npm run test:unit`
@@ -19,7 +25,7 @@ description: Release PracticeLab desktop apps through the tagged GitHub Actions 
 4. 修正内容の再発を直接検出するテストが妥当なら追加する。既存テストの成功だけで今回の不具合を検証済みとは扱わない。
 5. `git diff --check`と`git status --short`を確認する。`public/audio/`、`public/video/`、`public/results/`、`public/score/`、`public/stems/`の生成データをコミットしない。
 
-UI・静的ビューア変更を含む場合は、`practice-lab-r2-sync`スキルも使用する。R2接続設定がなく同期できない場合は、全件同期へ切り替えず、未実施であることを最終報告する。
+UI・静的ビューア変更を含む場合は、`practice-lab-r2-sync`スキルも使用する。R2同期は明示的に依頼された場合だけ実行する。依頼された同期を実行できない場合は、全件同期へ切り替えず、未実施であることを最終報告する。
 
 ## 公開
 
@@ -35,6 +41,15 @@ UI・静的ビューア変更を含む場合は、`practice-lab-r2-sync`スキ�
 
 CI失敗時は失敗stepとログを確認し、原因を修正して新しい適切なコミット・タグでやり直す。壊れたReleaseを成功として報告しない。
 
+## ローカルビルドでこのMacを更新
+
+動作確認用のローカル更新が依頼された場合に適用する。公開DMGを使う必要はない。
+
+1. `package.json`と`package-lock.json`のバージョンを維持し、ローカル更新だけを理由に`RELEASE_NOTES.md`へ新しいバージョンの見出しを追加しない。ビルドの識別にはコミットIDや成果物のSHA-256を使う。
+2. フロント生成物と必要な同梱資源を更新し、リリース準備の手順3〜5のテスト・確認を実行する。
+3. `npm run desktop:dist:mac -- --publish=never`でローカルDMGを作成する。タグ作成・push・GitHub Release公開・R2同期を追加しない。
+4. 下記のMac更新手順2〜7に従う。バージョンは既存値との一致を確認し、同じバージョンでも修正が入ったことを同梱ファイルやハッシュで確認する。
+
 ## 公開DMGからこのMacを更新
 
 ユーザーがローカル更新も依頼した場合だけ実行する。
@@ -49,4 +64,4 @@ CI失敗時は失敗stepとログを確認し、原因を修正して新しい�
 
 ## 完了報告
 
-公開したReleaseへのリンク、バージョン、テスト結果、CI三jobの結果、ローカル更新と起動確認、R2同期結果を簡潔に報告する。旧アプリをゴミ箱へ移した場合は復元可能であることも伝える。
+実行した範囲に応じて、テスト結果とローカル更新・起動確認を簡潔に報告する。公開した場合はReleaseへのリンク、バージョン、CI三jobの結果を、R2同期を依頼された場合はその結果を含める。ローカル確認用の場合は公開していないことを明記する。旧アプリをゴミ箱へ移した場合は復元可能であることも伝える。
