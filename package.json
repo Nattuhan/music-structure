@@ -18,7 +18,8 @@
     "desktop:dist": "electron-builder --win nsis",
     "desktop:dist:mac": "electron-builder --mac --arm64",
     "test:unit": "node --test frontend/tests/*.test.js desktop/tests/*.test.cjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:audio": "node scripts/diagnose_playback.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",

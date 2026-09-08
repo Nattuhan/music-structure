@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createStemTransport } from '../src/stem-transport.js';
 import { planStemPlayback } from '../src/playback-sync.js';
-import { createMetronome } from '../src/metronome.js';
 
 class Media extends EventTarget {
   currentTime = 0;
@@ -179,56 +178,19 @@ test('元音源を明示選択した後は復帰イベントでパートを勝�
   assert.equal(players.drums.paused, true);
 });
 
-const metroFixture = () => {
-  const clock = { time: 10, audioTime: 100, rate: 1, playing: true };
-  let beats = [10.02, 10.5, 11];
-  const frames = new Map();
-  const scheduled = [];
-  let id = 0;
-  let clears = 0;
-  const metro = createMetronome({
-    getBeats: () => beats, getTime: () => clock.time, getRate: () => clock.rate,
-    getAudioTime: () => clock.audioTime, isPlaying: () => clock.playing,
-    emit: time => scheduled.push(time), clear: () => { clears++; scheduled.length = 0; },
-    schedule: callback => { frames.set(++id, callback); return id; },
-    cancel: id => frames.delete(id),
-  });
-  const tick = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback()); };
-  return { clock, metro, tick, scheduled, frames, get clears() { return clears; }, setBeats: value => { beats = value; } };
-};
-
-test('クリック予約は0.5倍・等速・1.5倍で実時間へ換算する', () => {
-  for (const rate of [0.5, 1, 1.5]) {
-    const f = metroFixture();
-    f.clock.rate = rate;
-    f.metro.start(); f.tick();
-    assert.equal(f.scheduled.length, 1);
-    assert.ok(Math.abs(f.scheduled[0] - (100 + 0.02 / rate)) < 1e-10);
-  }
-});
-
-test('速度変更・ループ・停止でクリック予約を破棄し、タイマーを多重化しない', () => {
-  const f = metroFixture();
-  f.metro.start(); f.tick();
-  f.clock.rate = 0.5;
-  f.metro.reset(); f.tick();
-  assert.ok(Math.abs(f.scheduled[0] - 100.04) < 1e-10);
-  f.clock.time = 10.5;
-  f.metro.reset(10.5); f.tick();
-  assert.deepEqual(f.scheduled, [100]);
-  assert.equal(f.frames.size, 1);
-  f.metro.stop(); f.tick();
-  assert.deepEqual(f.scheduled, []);
-  assert.equal(f.frames.size, 0);
-});
-
-test('読み込み待ち中は発音せず、復帰時に過去の拍をまとめて鳴らさない', () => {
-  const f = metroFixture();
-  f.clock.playing = false;
-  f.metro.start(); f.tick();
-  assert.deepEqual(f.scheduled, []);
-  f.clock.playing = true;
-  f.clock.time = 10.8;
-  f.tick();
-  assert.deepEqual(f.scheduled, []);
+test('クリックは無音の元音源ではなく再生中のパートの時計を選ぶ', async () => {
+  const { selectPlaybackClock } = await import('../src/playback-clock.js');
+  const master = { currentTime: 4 };
+  const vocals = { currentTime: 4.08, paused: false, seeking: false, muted: false, volume: 0.8, readyState: 4 };
+  const drums = { ...vocals, currentTime: 4.09 };
+  const input = { master, players: { vocals, drums }, activeStems: ['vocals', 'drums'], state: 'stems' };
+  assert.equal(selectPlaybackClock(input).media, vocals);
+  vocals.muted = true;
+  assert.equal(selectPlaybackClock(input).media, drums);
+  drums.seeking = true;
+  assert.equal(selectPlaybackClock(input).media, master);
+  vocals.muted = false;
+  assert.equal(selectPlaybackClock({ ...input, state: 'starting' }).media, master);
+  assert.equal(selectPlaybackClock({ ...input, state: 'original' }).media, master);
+  assert.equal(selectPlaybackClock({ ...input, activeStems: [] }).media, master);
 });

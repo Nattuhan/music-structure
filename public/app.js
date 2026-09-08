@@ -2556,6 +2556,7 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
     state = "stems";
     notify();
     for (const name of names) players[name].muted = false;
+    notify();
     return true;
   };
   const pause = () => {
@@ -2661,70 +2662,112 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
   return { setPlayers, setMix, play, pause, sync, retry, useOriginal, setMasterWaiting, destroy, snapshot };
 };
 
-// frontend/src/metronome.js
-var createMetronome = ({
-  getBeats,
-  getTime,
-  getRate,
-  getAudioTime,
-  isPlaying,
-  emit,
-  clear,
-  schedule = (callback) => setTimeout(callback, 25),
-  cancel = clearTimeout,
-  lookAhead = () => 0.12
-}) => {
-  let generation = 0;
-  let timer = 0;
-  let active = false;
-  let nextBeat = 0;
-  let lastTime = 0;
-  const align = (time) => {
-    const index = getBeats().findIndex((beat) => beat >= time - 0.02);
-    nextBeat = index < 0 ? getBeats().length : index;
-    lastTime = time;
+// frontend/src/aligned-click.js
+var clickWave = (sampleRate) => {
+  const wave = new Float32Array(Math.ceil(sampleRate * 0.055));
+  let previous = 0, filtered = 0;
+  const alpha = Math.exp(-2 * Math.PI * 700 / sampleRate);
+  for (let i3 = 0; i3 < wave.length; i3++) {
+    const t3 = i3 / sampleRate;
+    const square = Math.sin(2 * Math.PI * 1800 * t3) >= 0 ? 1 : -1;
+    filtered = alpha * (filtered + square - previous);
+    previous = square;
+    const envelope = t3 < 3e-3 ? 1e-4 * (0.9 / 1e-4) ** (t3 / 3e-3) : 0.9 * (1e-4 / 0.9) ** ((t3 - 3e-3) / 0.042);
+    wave[i3] = filtered * envelope;
+  }
+  return wave;
+};
+var alignedWav = async (buffer, beats, { signal, yieldTask = () => new Promise((resolve) => setTimeout(resolve, 0)) } = {}) => {
+  const { sampleRate, length } = buffer;
+  const channels = 3, bytesPerFrame = channels * 4;
+  const header = new Uint8Array(44);
+  const view = new DataView(header.buffer);
+  const text = (offset, value) => [...value].forEach((char, i3) => view.setUint8(offset + i3, char.charCodeAt(0)));
+  if (length * bytesPerFrame + 36 > 4294967295) throw new Error("\u97F3\u6E90\u304C\u9577\u3059\u304E\u307E\u3059");
+  text(0, "RIFF");
+  view.setUint32(4, 36 + length * bytesPerFrame, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 3, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerFrame, true);
+  view.setUint16(32, bytesPerFrame, true);
+  view.setUint16(34, 32, true);
+  text(36, "data");
+  view.setUint32(40, length * bytesPerFrame, true);
+  const left = buffer.getChannelData(0), right = buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1));
+  const click = clickWave(sampleRate);
+  const positions = [...new Set(beats.filter(Number.isFinite).filter((t3) => t3 >= 0).map((t3) => Math.round(t3 * sampleRate)))].sort((a3, b2) => a3 - b2);
+  const chunks = [header];
+  let beatIndex = 0;
+  for (let start = 0; start < length; start += sampleRate) {
+    signal?.throwIfAborted();
+    const count = Math.min(sampleRate, length - start);
+    const samples = new Float32Array(count * channels);
+    for (let i3 = 0; i3 < count; i3++) {
+      samples[i3 * 3] = left[start + i3];
+      samples[i3 * 3 + 1] = right[start + i3];
+    }
+    while (beatIndex < positions.length && positions[beatIndex] + click.length <= start) beatIndex++;
+    for (let j = beatIndex; j < positions.length && positions[j] < start + count; j++) {
+      const offset = positions[j] - start;
+      for (let k = Math.max(0, -offset); k < click.length && offset + k < count; k++) samples[(offset + k) * 3 + 2] += click[k];
+    }
+    chunks.push(samples);
+    if (start % (sampleRate * 8) === 0) await yieldTask();
+  }
+  signal?.throwIfAborted();
+  return new Blob(chunks, { type: "audio/wav" });
+};
+var connectAlignedOutput = (ctx, source, media) => {
+  const splitter = ctx.createChannelSplitter(3);
+  const stereo = ctx.createChannelMerger(2);
+  const music = ctx.createGain(), click = ctx.createGain();
+  source.connect(splitter);
+  splitter.connect(stereo, 0, 0);
+  splitter.connect(stereo, 1, 1);
+  stereo.connect(music);
+  music.connect(ctx.destination);
+  splitter.connect(click, 2);
+  click.gain.value = 0;
+  click.connect(ctx.destination);
+  let volume = media.volume, muted = media.muted;
+  media.volume = 1;
+  media.muted = false;
+  const update = () => {
+    music.gain.value = muted ? 0 : volume;
   };
-  const tick = (token) => {
-    if (token !== generation || !active) return;
-    if (isPlaying()) {
-      const time = getTime();
-      if (Math.abs(time - lastTime) > 0.25) {
-        clear();
-        align(time);
-      }
-      lastTime = time;
-      const rate = Math.max(0.01, Number(getRate()) || 1);
-      const beats = getBeats();
-      const audioTime = getAudioTime();
-      while (nextBeat < beats.length && beats[nextBeat] <= time + lookAhead() * rate) {
-        if (beats[nextBeat] >= time - 0.02) emit(audioTime + Math.max(0, (beats[nextBeat] - time) / rate));
-        nextBeat += 1;
+  Object.defineProperty(media, "volume", { configurable: true, get: () => volume, set: (value) => {
+    volume = Math.max(0, Math.min(1, Number(value) || 0));
+    update();
+  } });
+  Object.defineProperty(media, "muted", { configurable: true, get: () => muted, set: (value) => {
+    muted = !!value;
+    update();
+  } });
+  update();
+  return { click, destroy() {
+    for (const node of [splitter, stereo, music, click]) node.disconnect();
+    delete media.volume;
+    delete media.muted;
+    media.volume = volume;
+    media.muted = muted;
+  } };
+};
+
+// frontend/src/playback-clock.js
+var selectPlaybackClock = ({ master, players = {}, activeStems = [], state }) => {
+  if (state === "stems") {
+    for (const name of activeStems) {
+      const media = players[name];
+      if (media && !media.paused && !media.seeking && !media.muted && media.volume > 0 && media.readyState >= 3) {
+        return { media, name };
       }
     }
-    timer = schedule(() => tick(token));
-  };
-  const stop = () => {
-    active = false;
-    generation += 1;
-    if (timer) cancel(timer);
-    timer = 0;
-    clear();
-  };
-  const start = (time = getTime()) => {
-    stop();
-    active = true;
-    align(time);
-    const token = generation;
-    timer = schedule(() => tick(token));
-  };
-  const reset = (time = getTime()) => {
-    if (active) start(time);
-    else {
-      clear();
-      align(time);
-    }
-  };
-  return { start, stop, reset };
+  }
+  return { media: master, name: "original" };
 };
 
 // frontend/src/video-gestures.js
@@ -3053,9 +3096,12 @@ var audioReady = false;
 var videoAvailable = true;
 var playbackRate = 1;
 var audioCtx = null;
+var audioPreparation = null;
+var alignedAssetUrls = [];
+var alignedOutputs = /* @__PURE__ */ new Map();
+var playbackRawAssets = null;
 var masterSourceNode = null;
 var stemSourceNodes = /* @__PURE__ */ new Map();
-var scheduledClickVoices = /* @__PURE__ */ new Set();
 var customLoopRange = null;
 var waveformSelectionEl = null;
 var waveformSectionSelectionEls = [];
@@ -3075,6 +3121,7 @@ var lastVideoSyncAt = 0;
 var videoClickTimer = 0;
 var stemPlayers = {};
 var stemReady = false;
+var stemPreparationVersion = 0;
 var stemHoldingMaster = false;
 var currentStemAssets = null;
 var mobileStemMixActivated = false;
@@ -3731,6 +3778,7 @@ var stemTransport = createStemTransport({
   onChange: () => {
     updateOriginalVolume();
     updateStemPlaybackStatus();
+    if (ws) updateAlignedClickOutput();
   },
   onSync: (audioTime, drift, stemCount) => logPlaybackDiagnostic("stem-resync", {
     audioTime,
@@ -3745,7 +3793,12 @@ var updateOriginalVolume = () => {
   ws?.setVolume(!stemReady || stemTransport.snapshot().useOriginalMix ? volume : 0);
 };
 var destroyStemPlayers = () => {
+  stemPreparationVersion += 1;
   stemTransport.destroy();
+  for (const player of Object.values(stemPlayers)) {
+    alignedOutputs.get(player)?.destroy();
+    alignedOutputs.delete(player);
+  }
   for (const source of stemSourceNodes.values()) source.disconnect();
   stemSourceNodes.clear();
   for (const player of Object.values(stemPlayers)) {
@@ -3807,6 +3860,7 @@ var applyStemMix = () => {
   }
   if (stemReady) stemTransport.setMix(playbackPlan, mix, masterVolume);
   updateOriginalVolume();
+  updateAlignedClickOutput();
 };
 var updateStemExportScopeAvailability = () => {
   if (!SELECTORS.stemExportScope) return;
@@ -3914,7 +3968,7 @@ var applyPlaybackRate = (value) => {
   preserveMediaPitch(SELECTORS.videoPlayer);
   SELECTORS.videoPlayer.playbackRate = playbackRate;
   syncStemPlayers(ws?.getCurrentTime?.() ?? 0);
-  metronome.reset();
+  updateAlignedClickOutput();
 };
 var nudgePlaybackRate = (delta) => {
   const next = Math.round((playbackRate + delta) / PLAYBACK_RATE_STEP) * PLAYBACK_RATE_STEP;
@@ -4487,15 +4541,50 @@ var getCtx = () => {
   if (audioCtx.state === "suspended") audioCtx.resume();
   return audioCtx;
 };
-var initStemPlayers = (stemAssets) => {
+var prepareAlignedAsset = async (url, beats, signal) => {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`\u97F3\u6E90\u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093 (${response.status})`);
+  const buffer = await getCtx().decodeAudioData(await response.arrayBuffer());
+  const blob = await alignedWav(buffer, beats, { signal });
+  return URL.createObjectURL(blob);
+};
+var initStemPlayers = async (stemAssets) => {
   destroyStemPlayers();
+  const preparationVersion = stemPreparationVersion;
+  if (hasStemAssets({ stems: stemAssets }) && !STEM_NAMES.every((name) => alignedAssetUrls.includes(stemAssets[name]))) {
+    const preparation = audioPreparation;
+    const urls = [];
+    try {
+      const prepared = {};
+      for (const name of STEM_NAMES) {
+        prepared[name] = await prepareAlignedAsset(stemAssets[name], getAdjustedBeats(), preparation?.signal);
+        urls.push(prepared[name]);
+        if (preparationVersion !== stemPreparationVersion) {
+          for (const url of urls) URL.revokeObjectURL(url);
+          return false;
+        }
+      }
+      preparation?.signal.throwIfAborted();
+      alignedAssetUrls.push(...urls);
+      currentStemAssets = stemAssets = prepared;
+    } catch (error) {
+      for (const url of urls) URL.revokeObjectURL(url);
+      if (!preparation?.signal.aborted) {
+        SELECTORS.stemStatus.className = "stem-status err";
+        SELECTORS.stemStatus.textContent = "\u30D1\u30FC\u30C8\u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093 \xB7 \u5143\u97F3\u6E90\u3092\u518D\u751F";
+      }
+      return false;
+    }
+  }
   if (!hasStemAssets({ stems: stemAssets })) return false;
   for (const stem of STEM_NAMES) {
     const player = new Audio();
     player.crossOrigin = "anonymous";
     player.src = stemAssets[stem];
+    player.dataset.stem = stem;
     const source = getCtx().createMediaElementSource(player);
-    source.connect(getCtx().destination);
+    if (alignedAssetUrls.includes(player.src)) alignedOutputs.set(player, connectAlignedOutput(getCtx(), source, player));
+    else source.connect(getCtx().destination);
     stemSourceNodes.set(stem, source);
     player.preload = isMobileViewport() ? "metadata" : "auto";
     preserveMediaPitch(player);
@@ -4507,59 +4596,53 @@ var initStemPlayers = (stemAssets) => {
   applyStemMix();
   return true;
 };
-var clickTone = (time) => {
-  const ctx = getCtx();
-  const startTime = Math.max(ctx.currentTime + 2e-3, time);
-  const volume = parseInt(SELECTORS.volMetro.value, 10) / 100;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  const filter = ctx.createBiquadFilter();
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  osc.type = "square";
-  osc.frequency.value = 1800;
-  filter.type = "highpass";
-  filter.frequency.value = 700;
-  gain.gain.setValueAtTime(1e-4, startTime);
-  gain.gain.exponentialRampToValueAtTime(Math.max(1e-4, volume * 0.9), startTime + 3e-3);
-  gain.gain.exponentialRampToValueAtTime(1e-4, startTime + 0.045);
-  osc.start(startTime);
-  osc.stop(startTime + 0.055);
-  const voice = { osc, gain, filter };
-  scheduledClickVoices.add(voice);
-  osc.onended = () => {
-    scheduledClickVoices.delete(voice);
-    gain.disconnect();
-    filter.disconnect();
-    osc.disconnect();
-  };
-};
-var clearScheduledClicks = () => {
-  const ctx = audioCtx;
-  const now = ctx?.currentTime ?? 0;
-  for (const voice of scheduledClickVoices) {
-    try {
-      voice.gain.gain.cancelScheduledValues(now);
-      voice.gain.gain.setTargetAtTime(1e-4, now, 3e-3);
-      voice.osc.stop(now + 0.012);
-    } catch {
-    }
-  }
-};
-var metronome = createMetronome({
-  getBeats: () => getAdjustedBeats(),
-  getTime: () => ws?.getCurrentTime() ?? 0,
-  getRate: () => playbackRate,
-  getAudioTime: () => getCtx().currentTime,
-  isPlaying: () => !!ws?.isPlaying() && audioAvailable && metroOn && (ws.getMediaElement()?.readyState ?? 0) >= 3,
-  emit: clickTone,
-  clear: clearScheduledClicks,
-  lookAhead: () => 0.12
+var audiblePlaybackClock = () => selectPlaybackClock({
+  master: ws?.getMediaElement(),
+  players: stemPlayers,
+  activeStems: currentStemPlaybackPlan().activeStems,
+  state: stemTransport.snapshot().state
 });
-var syncMetronome = () => metronome.reset();
-var startMetro = () => metronome.start();
-var stopMetro = () => metronome.stop();
+var updateAlignedClickOutput = () => {
+  const reference = audiblePlaybackClock().media;
+  const volume = metroOn && ws?.isPlaying() && reference && !reference.paused && !reference.seeking ? Number(SELECTORS.volMetro.value) / 100 : 0;
+  for (const [media, output] of alignedOutputs) output.click.gain.value = media === reference ? volume : 0;
+};
+var startMetro = () => updateAlignedClickOutput();
+var stopMetro = () => {
+  for (const output of alignedOutputs.values()) output.click.gain.value = 0;
+};
+setInterval(() => {
+  if (!ws?.isPlaying()) return;
+  const { media, name } = audiblePlaybackClock();
+  const range = getLoopRange();
+  logPlaybackDiagnostic("playback-clock", {
+    audioTime: ws.getCurrentTime(),
+    referenceTime: media?.currentTime,
+    reference: name,
+    playbackRate,
+    contextTime: audioCtx?.currentTime,
+    outputContextTime: audioCtx?.getOutputTimestamp?.().contextTime,
+    outputLatency: audioCtx?.outputLatency,
+    baseLatency: audioCtx?.baseLatency,
+    clickEnabled: Number(metroOn),
+    loopEnabled: Number(loopOn),
+    loopStart: range?.start,
+    loopEnd: range?.end,
+    ...Object.fromEntries(STEM_NAMES.map((stem) => [`${stem}Time`, stemPlayers[stem]?.currentTime]))
+  });
+}, 1e3);
+var rebuildAlignedClicks = async () => {
+  if (!playbackRawAssets) return;
+  const time = ws?.getCurrentTime() ?? 0, playing = !!ws?.isPlaying();
+  const { audio, video, stems } = playbackRawAssets;
+  const player = await initWaveSurfer(audio, video, stems);
+  if (!player || player !== ws) return;
+  player.once("ready", () => {
+    if (ws !== player) return;
+    seekAudio(time, { respectLoopRange: false });
+    if (playing) void player.play();
+  });
+};
 var seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
   if (!ws) return;
   const duration = ws.getDuration();
@@ -4569,7 +4652,7 @@ var seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
     const loopRange = getLoopRange();
     if (loopRange && clampedTime < loopRange.start) clampedTime = loopRange.start;
   }
-  metronome.reset(clampedTime);
+  stopMetro();
   syncVideoToAudio(clampedTime, { force: true });
   ws.seekTo(clampedTime / duration);
   syncStemPlayers(clampedTime, { force: true });
@@ -5664,7 +5747,16 @@ var initVideoPlayer = (videoUrl) => {
     SELECTORS.btnVideoFullscreen.hidden = true;
   };
 };
-var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
+var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null) => {
+  playbackRawAssets = { audio: audioUrl, video: videoUrl, stems: stemAssets };
+  audioPreparation?.abort();
+  const preparation = new AbortController();
+  audioPreparation = preparation;
+  audioReady = false;
+  for (const button of [SELECTORS.btnPlay, SELECTORS.btnFsPlay, SELECTORS.btnMetro, SELECTORS.btnFsMetro]) button.disabled = true;
+  SELECTORS.waveformLoading.hidden = false;
+  for (const output of alignedOutputs.values()) output.destroy();
+  alignedOutputs.clear();
   if (ws) {
     stopMetro();
     masterSourceNode?.disconnect();
@@ -5673,9 +5765,44 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     ws = null;
   }
   destroyStemPlayers();
+  initVideoPlayer(videoUrl);
+  for (const url of alignedAssetUrls) URL.revokeObjectURL(url);
+  alignedAssetUrls = [];
+  const preparedUrls = [];
+  const beats = getAdjustedBeats();
+  const prepareAsset = async (url) => {
+    const prepared = await prepareAlignedAsset(url, beats, preparation.signal);
+    preparedUrls.push(prepared);
+    return prepared;
+  };
+  try {
+    audioUrl = await prepareAsset(audioUrl);
+    if (hasStemAssets({ stems: stemAssets }) && !isMobileViewport()) {
+      const preparedStems = {};
+      for (const name of STEM_NAMES) {
+        try {
+          preparedStems[name] = await prepareAsset(stemAssets[name]);
+        } catch (error) {
+          preparation.signal.throwIfAborted();
+          const unavailable = URL.createObjectURL(new Blob([], { type: "audio/wav" }));
+          preparedUrls.push(unavailable);
+          preparedStems[name] = unavailable;
+        }
+      }
+      stemAssets = preparedStems;
+    }
+    preparation.signal.throwIfAborted();
+  } catch (error) {
+    for (const url of preparedUrls) URL.revokeObjectURL(url);
+    if (preparation.signal.aborted) return null;
+    SELECTORS.waveformLoading.hidden = true;
+    SELECTORS.status.className = "status err";
+    SELECTORS.status.textContent = error.message;
+    return null;
+  }
+  alignedAssetUrls = preparedUrls;
   currentStemAssets = hasStemAssets({ stems: stemAssets }) ? stemAssets : null;
   mobileStemMixActivated = false;
-  initVideoPlayer(videoUrl);
   waveformDrag = null;
   cancelWaveformPreviewSeek();
   SELECTORS.timeCur.textContent = "00:00";
@@ -5695,7 +5822,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     plugins: [d2.create()]
   });
   masterSourceNode = getCtx().createMediaElementSource(ws.getMediaElement());
-  masterSourceNode.connect(getCtx().destination);
+  alignedOutputs.set(ws.getMediaElement(), connectAlignedOutput(getCtx(), masterSourceNode, ws.getMediaElement()));
   if (currentStemAssets && !isMobileViewport()) initStemPlayers(currentStemAssets);
   applyMusicVolume(SELECTORS.volMusic.value);
   ws.setPlaybackRate?.(playbackRate, true);
@@ -5727,7 +5854,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   };
   const audioMedia = ws.getMediaElement?.();
   audioMedia?.addEventListener("ended", handlePlaybackFinished);
-  for (const type of ["waiting", "stalled", "playing", "seeking", "abort", "error"]) {
+  for (const type of ["waiting", "stalled", "playing", "seeking", "seeked", "ratechange", "abort", "error"]) {
     audioMedia?.addEventListener(type, () => {
       logPlaybackDiagnostic(`audio-${type}`, mediaDiagnosticDetails(audioMedia));
     });
@@ -5913,6 +6040,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     updatePlayingRow(time);
     syncVideoToAudio(time);
     syncStemPlayers(time);
+    updateAlignedClickOutput();
     if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer(time);
     if (loopOn && ws.isPlaying() && !SELECTORS.sectionEditor?.open) {
       const loopRange = getLoopRange();
@@ -5942,7 +6070,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   });
   ws.on("seeking", () => {
     const time = ws.getCurrentTime();
-    metronome.reset(time);
+    stopMetro();
     syncVideoToAudio(time, { force: true });
     syncStemPlayers(time, { force: true });
   });
@@ -5958,6 +6086,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     SELECTORS.audioNote.hidden = false;
     updatePlayButton();
   });
+  return ws;
 };
 var setupControls = () => {
   SELECTORS.btnPlay.onclick = togglePlayback;
@@ -6016,25 +6145,28 @@ var setupControls = () => {
     bpmFactor /= 2;
     saveCfg(bpmCorrectionKey(currentId), bpmFactor);
     applyBpmDisplay();
+    void rebuildAlignedClicks();
   };
   SELECTORS.btnBpmDouble.onclick = () => {
     if (!currentId) return;
     bpmFactor *= 2;
     saveCfg(bpmCorrectionKey(currentId), bpmFactor);
     applyBpmDisplay();
+    void rebuildAlignedClicks();
   };
   SELECTORS.btnBpmReset.onclick = () => {
     if (!currentId) return;
     bpmFactor = 1;
     saveCfg(bpmCorrectionKey(currentId), bpmFactor);
     applyBpmDisplay();
+    void rebuildAlignedClicks();
   };
   SELECTORS.btnClickOffset.onclick = () => {
     if (!currentId) return;
     clickOffsetHalfBeat = !clickOffsetHalfBeat;
     saveCfg(clickOffsetKey(currentId), clickOffsetHalfBeat);
     SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
-    syncMetronome();
+    void rebuildAlignedClicks();
   };
   SELECTORS.btnBpmSave.onclick = async () => {
     if (!currentId || !hasServer) return;
@@ -6083,8 +6215,7 @@ var setupControls = () => {
     };
   };
   setVol(SELECTORS.volMusic, SELECTORS.volMusicVal, "volMusic", applyMusicVolume);
-  setVol(SELECTORS.volMetro, SELECTORS.volMetroVal, "volMetro", () => {
-  });
+  setVol(SELECTORS.volMetro, SELECTORS.volMetroVal, "volMetro", updateAlignedClickOutput);
   SELECTORS.playbackRate.oninput = () => applyPlaybackRate(SELECTORS.playbackRate.value);
   SELECTORS.btnSpeedReset.onclick = () => applyPlaybackRate(DEFAULT_PLAYBACK_RATE);
   for (const stem of STEM_NAMES) {
@@ -6171,7 +6302,7 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   SELECTORS.btnBpmSave.hidden = !hasServer;
   SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
   applyPlaybackRate(playbackRate);
-  initWaveSurfer(assets.audio, assets.video, assets.stems);
+  const playerInitialization = initWaveSurfer(assets.audio, assets.video, assets.stems);
   renderStemPanel(assets);
   setupControls();
   const maxBars = Math.max(...data.sections.map((section) => section.bar_count));
@@ -6229,7 +6360,9 @@ var showResult = (data, id, { autoplay = false } = {}) => {
       ws.play();
     };
     if (audioReady) startWhenReady();
-    else ws?.once?.("decode", startWhenReady);
+    else void playerInitialization.then((player) => {
+      if (player && player === ws) player.once("ready", startWhenReady);
+    });
   }
 };
 var sectionEditorDraft = [];

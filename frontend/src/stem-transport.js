@@ -120,6 +120,7 @@ export const createStemTransport = ({ getTime, getRate, isPlaying, onChange, onS
     state = 'stems';
     notify(); // Mute the original before making the stems audible.
     for (const name of names) players[name].muted = false;
+    notify(); // The audible clock is now available to dependent schedulers.
     return true;
   };
   const pause = () => {

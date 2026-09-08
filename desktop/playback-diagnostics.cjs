@@ -8,6 +8,9 @@ const ALLOWED_EVENTS = new Set([
   "audio-play",
   "audio-playing",
   "audio-seeking",
+  "audio-seeked",
+  "audio-ratechange",
+  "playback-clock",
   "audio-stalled",
   "audio-waiting",
   "stem-resync",
@@ -23,6 +26,19 @@ const NUMBER_FIELDS = [
   "readyState",
   "networkState",
   "stemCount",
+  "referenceTime",
+  "contextTime",
+  "outputContextTime",
+  "outputLatency",
+  "baseLatency",
+  "clickEnabled",
+  "loopEnabled",
+  "loopStart",
+  "loopEnd",
+  "vocalsTime",
+  "drumsTime",
+  "bassTime",
+  "otherTime",
 ];
 
 const finiteNumber = value => {
@@ -39,6 +55,7 @@ const sanitizePlaybackEvent = (input, now = new Date()) => {
   };
   const sessionId = String(input?.sessionId || "").replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 160);
   if (sessionId) event.sessionId = sessionId;
+  if (["original", "vocals", "drums", "bass", "other"].includes(input?.reference)) event.reference = input.reference;
   for (const key of NUMBER_FIELDS) {
     const value = finiteNumber(input?.[key]);
     if (value !== undefined) event[key] = value;

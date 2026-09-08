@@ -389,14 +389,12 @@ test("スマホのR2閲覧版は初回に曲一覧を開き、パート音源を
   expect(stemRequests).toEqual([]);
 });
 
-test("再生中にループ端を連続ドラッグしても音源とクリック予約を多重化しない", async ({ page }) => {
+test("再生中にループ端を連続ドラッグしても音源を多重化せず独立クリックを予約しない", async ({ page }) => {
   const result = {
     ...baselineResult,
     duration: 8,
     total_bars: 4,
-    // Keep a future click voice scheduled throughout the drag so cancellation
-    // is deterministic instead of depending on a 55 ms timing window.
-    beats: Array.from({ length: 160 }, (_, index) => index * .05),
+    beats: Array.from({ length: 16 }, (_, index) => index * .5),
     downbeats: [0, 2, 4, 6],
     sections: [{ label: "verse", start_bar: 1, end_bar: 4, bar_count: 4, start_time: 0, end_time: 8, start_time_str: "00:00" }],
   };
@@ -442,7 +440,7 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
       enumerable: nativeCurrentTime.enumerable,
       get() {
         const value = nativeCurrentTime.get.call(this);
-        return this.src.includes("/stems/e2e-baseline/vocals.wav") ? value + .09 : value;
+        return this.dataset.stem === "vocals" ? value + .09 : value;
       },
       set(value) {
         return nativeCurrentTime.set.call(this, value);
@@ -456,7 +454,7 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
         return nativePlaybackRate.get.call(this);
       },
       set(value) {
-        if (this.src.includes("/stems/e2e-baseline/") && Math.abs(value - 1) > .001) {
+        if (this.dataset.stem && Math.abs(value - 1) > .001) {
           audit.stemNonBaseRateWrites += 1;
         }
         return nativePlaybackRate.set.call(this, value);
@@ -507,7 +505,7 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
   const audit = await page.evaluate(() => window.__playbackAudit);
   expect(audit.audioInstances).toBe(beforeResize.audioInstances);
   expect(audit.audioInstances).toBe(4);
-  expect(audit.repeatedOscillatorStops).toBeGreaterThan(0);
+  expect(audit.oscillatorStopCalls).toBe(0);
   expect(audit.stemNonBaseRateWrites).toBe(0);
   expect(audit.mediaPlayCalls - beforeResize.mediaPlayCalls).toBeLessThan(16);
   expect(audit.diagnostics.some(event => event.type === "audio-play" && event.sessionId === "e2e-baseline")).toBe(true);

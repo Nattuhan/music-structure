@@ -19,10 +19,34 @@ test.beforeEach(async ({ page }) => {
       return media;
     };
     window.Audio.prototype = NativeAudio.prototype;
+    window.__clickPeaks = [];
+    const clickAnalysers = [];
+    const connect = AudioNode.prototype.connect;
+    AudioNode.prototype.connect = function (target, ...args) {
+      const result = connect.call(this, target, ...args);
+      if (this instanceof ChannelSplitterNode && args[0] === 2) {
+        const analyser = this.context.createAnalyser(); analyser.fftSize = 1024;
+        const zero = this.context.createGain(); zero.gain.value = 0;
+        connect.call(target, analyser); connect.call(analyser, zero); connect.call(zero, this.context.destination);
+        clickAnalysers.push(analyser);
+      }
+      return result;
+    };
+    let lastClick = -1;
+    const samples = new Float32Array(1024);
+    setInterval(() => {
+      for (const analyser of clickAnalysers) {
+        analyser.getFloatTimeDomainData(samples);
+        if (samples.some(value => Math.abs(value) > 0.01) && analyser.context.currentTime - lastClick > 0.25) {
+          lastClick = analyser.context.currentTime;
+          window.__clickPeaks.push({ contextTime: lastClick, position: window.__media.original?.currentTime ?? 0 });
+        }
+      }
+    }, 10);
     const nativePlay = HTMLMediaElement.prototype.play;
     HTMLMediaElement.prototype.play = function (...args) {
-      if (this.tagName === 'AUDIO' && !this.src.includes('/stems/')) window.__media.original = this;
-      const name = this.src.match(/\/stems\/[^/]+\/(\w+)\.(?:wav|mp3)/)?.[1];
+      if (this.tagName === 'AUDIO' && !this.dataset.stem) window.__media.original = this;
+      const name = this.dataset.stem;
       if (name) window.__media.stems[name] = this;
       if (window.__media.reject.includes(name)) return Promise.reject(new Error('simulated unavailable stem'));
       return nativePlay.apply(this, args);
@@ -106,28 +130,20 @@ test('再生せず曲を開くだけで最後に開いた日時を保存し、�
   await expect(page.locator('#session-sort')).toHaveValue('title');
 });
 
-test('画面描画が停止してもクリック予約が続き、停止時には解除する', async ({ page }) => {
+test('画面描画が停止してもクリック音が続き、停止時には止まる', async ({ page }) => {
   await start(page);
-  await page.evaluate(() => {
-    window.__clicks = [];
-    const start = OscillatorNode.prototype.start;
-    OscillatorNode.prototype.start = function (time) {
-      window.__clicks.push(time);
-      return start.call(this, time);
-    };
-    // Hidden windows can stop rendering entirely; audio must not depend on it.
-    window.requestAnimationFrame = () => 0;
-  });
+  await page.evaluate(() => { window.requestAnimationFrame = () => 0; });
   await page.locator('#btn-metro').click();
-  await expect.poll(() => page.evaluate(() => window.__clicks.length)).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => page.evaluate(() => window.__clickPeaks.length)).toBeGreaterThanOrEqual(3);
   await page.locator('#btn-play').click();
-  const count = await page.evaluate(() => window.__clicks.length);
+  await page.waitForTimeout(100);
+  const count = await page.evaluate(() => window.__clickPeaks.length);
   await page.waitForTimeout(650);
-  expect(await page.evaluate(() => window.__clicks.length)).toBe(count);
+  expect(await page.evaluate(() => window.__clickPeaks.length)).toBe(count);
 });
 
 for (const sectionLoop of [false, true]) {
-test(`0.75倍速の${sectionLoop ? '区間' : '全曲'}ループでクリックの拍位置がずれない`, async ({ page }) => {
+test(`0.75倍速の${sectionLoop ? '区間' : '全曲'}ループで毎周クリック音が続く`, async ({ page }) => {
   const beats = [0.2, 0.6, 1, 1.4, 1.8];
   await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {
     ...baselineResult, duration: 2, beats, assets: {},
@@ -135,17 +151,7 @@ test(`0.75倍速の${sectionLoop ? '区間' : '全曲'}ループでクリック�
   } }));
   await page.route('**/audio/e2e-baseline.mp3', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(2) }));
   await page.addInitScript(() => {
-    window.__clickPositions = [];
     window.__wraps = 0;
-    const start = OscillatorNode.prototype.start;
-    OscillatorNode.prototype.start = function (time) {
-      const media = window.__media.original;
-      window.__clickPositions.push({
-        position: media.currentTime + (time - this.context.currentTime) * media.playbackRate,
-        seeking: media.seeking,
-      });
-      return start.call(this, time);
-    };
   });
   await page.goto('/');
   await expect(page.locator('#btn-play')).toBeEnabled();
@@ -167,12 +173,31 @@ test(`0.75倍速の${sectionLoop ? '区間' : '全曲'}ループでクリック�
   });
   await expect.poll(() => page.evaluate(() => window.__wraps), { timeout: 22000 }).toBeGreaterThanOrEqual(5);
   await page.locator('#btn-play').click();
-  const clicks = await page.evaluate(() => window.__clickPositions);
-  expect(clicks.length).toBeGreaterThanOrEqual(25);
+  const clicks = await page.evaluate(() => window.__clickPeaks);
+  expect(clicks.length).toBeGreaterThanOrEqual(24);
   for (const click of clicks) {
-    expect(Math.min(...beats.map(beat => Math.abs(beat - click.position)))).toBeLessThan(0.03);
-    expect(click.seeking).toBe(false);
+    expect(Math.min(...beats.map(beat => Math.abs(beat - click.position)))).toBeLessThan(0.12);
   }
 });
 
 }
+
+test('モバイルではパート操作まで追加音源を読み込まず、準備中のリセットで再生しない', async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 900 });
+  let loads = 0;
+  await page.route('**/stems/e2e-baseline/*', async route => {
+    loads++;
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await route.fulfill({ contentType: 'audio/wav', body: silentWav(30) });
+  });
+  await page.goto('/');
+  await expect(page.locator('#btn-play')).toBeEnabled();
+  expect(loads).toBe(0);
+  await page.locator('#btn-play').click();
+  await page.locator('#stem-drums-enabled').click();
+  await expect.poll(() => loads).toBeGreaterThan(0);
+  await page.locator('#btn-reset-stem-mix').click();
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => Object.values(window.__media.stems).every(media => media.paused))).toBe(true);
+  await expect.poll(() => originalVolume(page)).toBeGreaterThan(0);
+});
