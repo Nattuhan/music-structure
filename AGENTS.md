@@ -1,7 +1,7 @@
 # Repository Instructions
 
 - Cloudflare/R2への配信、同期、UI・静的ビューア変更では、リポジトリ内の `$practice-lab-r2-sync` スキルを使用する。
-- PracticeLabのデスクトップリリース作成、GitHub Release公開、公開DMGからのMac更新では、リポジトリ内の `$practice-lab-release` スキルを使用する。
+- PracticeLabのバージョン変更、デスクトップリリース作成、GitHub Release公開、ローカルアプリ更新、自動更新の検証では、リポジトリ内の `$practice-lab-release` スキルを使用する。ローカルの動作確認用更新だけではバージョンを上げない。
 - Cloudflare/R2への同期は、ユーザーが明示的に依頼した場合だけ実行する。UI変更、アプリ更新、パート音源の生成・再生成だけを理由に、自動で同期を追加しない。
 - When Cloudflare/R2 publication is explicitly requested, follow the incremental sync skill and run:
   - `.venv\Scripts\python.exe scripts\export_static.py`
