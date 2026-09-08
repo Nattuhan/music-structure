@@ -8,6 +8,8 @@
 
 ## 開発者・運用者向け
 
+- [不具合修正の原則](engineering-principles.md): 曲専用ハードコードの禁止、原因確認、共通処理での修正、検証と完了報告
+
 - [開発者ガイド](development.md): 環境構築、起動、テスト、内部構成、ビルド
 - [デスクトップリリース](desktop-release.md)
 - [Cloudflare R2](cloudflare-r2.md)
