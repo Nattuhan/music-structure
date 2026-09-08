@@ -732,7 +732,10 @@ test("セクション編集のスクラブ中は音声を止めて動画だけ�
   const playerToggle = page.locator("#section-editor-player-toggle");
   await playerToggle.click();
   await expect(playerToggle).toHaveAttribute("data-playing", "true");
-  await page.mouse.move(playheadBox.x + playheadBox.width / 2, playheadBox.y + playheadBox.height / 2);
+  // The playhead moves after playback starts; its earlier bounding box is stale.
+  // Drag the fixed scrub track so the test actually starts a scrub, rather than
+  // missing the handle and mistaking the short fixture ending for a pause.
+  await page.mouse.move(scrubBox.x + scrubBox.width * .1, scrubBox.y + scrubBox.height / 2);
   await page.mouse.down();
   await expect(playerToggle).toHaveAttribute("data-playing", "false");
   await page.mouse.move(scrubBox.x + scrubBox.width * .7, scrubBox.y + scrubBox.height / 2);
