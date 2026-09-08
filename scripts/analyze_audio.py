@@ -29,6 +29,7 @@ import torch
 from practice_lab.compute_device import is_acceleration_compatibility_error, select_torch_device
 from practice_lab.jpop_sections import refine_jpop_section_labels
 from practice_lab.timing import normalize_tempo_grid
+from practice_lab.audio_timing import refine_timing_from_audio
 
 
 def fmt(seconds: float) -> str:
@@ -112,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     if jpop_changes:
         data["jpopLabeling"] = {"version": 1, "changes": jpop_changes}
     data = normalize_tempo_grid(data)
+    data = refine_timing_from_audio(data, mp3_path)
     print(json.dumps(data, ensure_ascii=False))
     return 0
 

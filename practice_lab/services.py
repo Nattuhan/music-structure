@@ -27,7 +27,6 @@ from .optional_features import mac_analysis_runtime_executable, windows_cpu_runt
 from .process_manager import job_process_context, run_process, running_process, start_process, terminate_process, unregister_process
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
 from .timing import normalize_section_bar_ranges, normalize_tempo_grid
-from .timing_corrections import apply_timing_correction
 from .loudness import measure_stem_gain
 
 REPO_ROOT = SOURCE_ROOT
@@ -1215,9 +1214,6 @@ def analyze_url(
         set_job_status(job_id, "done", "Loaded from cache", done=True)
         return data
 
-    # Capture reviewed anchors before force reanalysis removes its cached result.
-    timing_correction = (json.loads(result_file.read_text(encoding="utf-8")).get("timingCorrection")
-                         if result_file.exists() else None)
     raise_if_job_canceled(job_id)
     if force:
         for path in (
@@ -1276,8 +1272,6 @@ def analyze_url(
 
     raise_if_job_canceled(job_id)
     analysis = normalize_tempo_grid(run_analyzer(audio_file, video_id, job_id=job_id))
-    if timing_correction:
-        analysis = apply_timing_correction(analysis, timing_correction)
     analysis.pop("device", None)
     raise_if_job_canceled(job_id)
     set_job_status(job_id, "saving", "Saving results")

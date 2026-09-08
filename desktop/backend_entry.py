@@ -28,6 +28,7 @@ MACOS_ANALYSIS_RUNTIME_MODULES = (
     "torch",
     "practice_lab.compute_device",
     "practice_lab.jpop_sections",
+    "practice_lab.audio_timing",
 )
 
 

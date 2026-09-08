@@ -19,6 +19,7 @@ $Work = Join-Path $RepoRoot "desktop\build\cpu-runtime"
     --hidden-import practice_lab.compute_device `
     --hidden-import practice_lab.jpop_sections `
     --hidden-import practice_lab.timing `
+    --hidden-import practice_lab.audio_timing `
     --distpath $Dist `
     --workpath $Work `
     --specpath (Join-Path $RepoRoot "desktop\build") `

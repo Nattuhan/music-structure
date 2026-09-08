@@ -31,6 +31,7 @@ fi
   --hidden-import practice_lab.compute_device \
   --hidden-import practice_lab.jpop_sections \
   --hidden-import practice_lab.timing \
+  --hidden-import practice_lab.audio_timing \
   --distpath "$dist_dir" \
   --workpath "$repo_root/desktop/build/analysis-runtime" \
   --specpath "$repo_root/desktop/build" \
