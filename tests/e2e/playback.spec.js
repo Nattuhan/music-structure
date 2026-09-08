@@ -125,3 +125,54 @@ test('画面描画が停止してもクリック予約が続き、停止時に�
   await page.waitForTimeout(650);
   expect(await page.evaluate(() => window.__clicks.length)).toBe(count);
 });
+
+for (const sectionLoop of [false, true]) {
+test(`0.75倍速の${sectionLoop ? '区間' : '全曲'}ループでクリックの拍位置がずれない`, async ({ page }) => {
+  const beats = [0.2, 0.6, 1, 1.4, 1.8];
+  await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {
+    ...baselineResult, duration: 2, beats, assets: {},
+    sections: [{ ...baselineResult.sections[0], start_time: 0.15, end_time: 1.9 }],
+  } }));
+  await page.route('**/audio/e2e-baseline.mp3', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(2) }));
+  await page.addInitScript(() => {
+    window.__clickPositions = [];
+    window.__wraps = 0;
+    const start = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (time) {
+      const media = window.__media.original;
+      window.__clickPositions.push({
+        position: media.currentTime + (time - this.context.currentTime) * media.playbackRate,
+        seeking: media.seeking,
+      });
+      return start.call(this, time);
+    };
+  });
+  await page.goto('/');
+  await expect(page.locator('#btn-play')).toBeEnabled();
+  await page.locator('#playback-rate').fill('0.75');
+  await page.locator('#btn-loop').click();
+  if (sectionLoop) {
+    await page.getByRole('button', { name: '曲構成', exact: true }).click();
+    await page.locator('.sec-row').first().click();
+  }
+  await page.locator('#btn-metro').click();
+  if (!sectionLoop) await page.locator('#btn-play').click();
+  await page.evaluate(() => {
+    let previous = 0;
+    window.__media.original.addEventListener('timeupdate', () => {
+      const current = window.__media.original.currentTime;
+      if (current < previous - 0.5) window.__wraps++;
+      previous = current;
+    });
+  });
+  await expect.poll(() => page.evaluate(() => window.__wraps), { timeout: 22000 }).toBeGreaterThanOrEqual(5);
+  await page.locator('#btn-play').click();
+  const clicks = await page.evaluate(() => window.__clickPositions);
+  expect(clicks.length).toBeGreaterThanOrEqual(25);
+  for (const click of clicks) {
+    expect(Math.min(...beats.map(beat => Math.abs(beat - click.position)))).toBeLessThan(0.03);
+    expect(click.seeking).toBe(false);
+  }
+});
+
+}

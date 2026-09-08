@@ -1,0 +1,11 @@
+{
+  "sessionId": "XUSMX3kEYoY-clip-0-228000",
+  "reason": "音源のアタックを照合。127.23秒以降のアクセントは3.5拍・4.5拍の交互で、テンポ変更ではない。8拍ごとの表拍を固定し、冒頭は既存の第1小節から延長する。",
+  "intro": {"downbeat": 1.83, "period": 0.3867},
+  "spans": [
+    {"start": 127.23, "end": 130.3, "intervals": 8},
+    {"start": 130.3, "end": 133.44, "intervals": 8},
+    {"start": 133.44, "end": 136.52, "intervals": 8},
+    {"start": 136.52, "end": 139.59, "intervals": 8}
+  ]
+}

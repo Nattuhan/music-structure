@@ -1,4 +1,5 @@
 import unittest
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -117,6 +118,17 @@ class AnalysisRangeTests(unittest.TestCase):
                     start_sec=30.5,
                     end_sec=95,
                 )
+                # A forced rerun deletes the old result: verified anchors must
+                # be captured before that deletion, then applied to fresh beats.
+                correction = {"spans": [{"start": 0, "end": 2, "intervals": 4}]}
+                result_path = paths["DATA_RESULTS_DIR"] / f"{result['id']}.json"
+                result_path.write_text(json.dumps({**result, "timingCorrection": correction}))
+                repeated = services.analyze_url(
+                    "https://www.youtube.com/watch?v=abc123",
+                    start_sec=30.5, end_sec=95, force=True,
+                )
+                self.assertEqual(repeated["timingCorrection"], correction)
+                self.assertEqual(repeated["beats"], [0, .5, 1, 1.5, 2])
 
             self.assertEqual(result["id"], "abc123-clip-30500-95000")
             self.assertEqual(result["sourceVideoId"], "abc123")
