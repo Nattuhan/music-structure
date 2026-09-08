@@ -8,7 +8,6 @@ import { extractWaveformPeaks } from "./waveform-peaks.js";
 import { mediaSyncAction, planStemPlayback } from "./playback-sync.js";
 import { createStemTransport } from "./stem-transport.js";
 import { alignedWav, connectAlignedOutput } from "./aligned-click.js";
-import { selectPlaybackClock } from "./playback-clock.js";
 import { videoClickAction } from "./video-gestures.js";
 
 const lucide = { createIcons: renderIcons };
@@ -339,8 +338,8 @@ let audioPreparation = null;
 let alignedAssetUrls = [];
 const alignedOutputs = new Map();
 let playbackRawAssets = null;
+let pendingPlaybackRestore = null;
 let masterSourceNode = null;
-const stemSourceNodes = new Map();
 let customLoopRange = null;
 let waveformSelectionEl = null;
 let waveformSectionSelectionEls = [];
@@ -360,8 +359,6 @@ let lastVideoSyncAt = 0;
 let videoClickTimer = 0;
 let stemPlayers = {};
 let stemReady = false;
-let stemPreparationVersion = 0;
-let stemHoldingMaster = false;
 let currentStemAssets = null;
 let mobileStemMixActivated = false;
 let stemExportInProgress = false;
@@ -1079,19 +1076,7 @@ const hasStemAssets = assets =>
 const stemTransport = createStemTransport({
   getTime: () => ws?.getCurrentTime() ?? 0,
   getRate: () => playbackRate,
-  isPlaying: () => stemHoldingMaster || !!ws?.isPlaying(),
-  holdMaster: () => {
-    const master = ws;
-    const resume = !!master?.isPlaying();
-    stemHoldingMaster = true;
-    stopMetro();
-    pauseVideo();
-    master?.pause();
-    return shouldResume => {
-      stemHoldingMaster = false;
-      if (shouldResume && resume && ws === master) void master.play();
-    };
-  },
+  isPlaying: () => !!ws?.isPlaying(),
   onChange: () => {
     updateOriginalVolume();
     updateStemPlaybackStatus();
@@ -1107,11 +1092,8 @@ const updateOriginalVolume = () => {
   ws?.setVolume(!stemReady || stemTransport.snapshot().useOriginalMix ? volume : 0);
 };
 const destroyStemPlayers = () => {
-  stemPreparationVersion += 1;
   stemTransport.destroy();
   for (const player of Object.values(stemPlayers)) { alignedOutputs.get(player)?.destroy(); alignedOutputs.delete(player); }
-  for (const source of stemSourceNodes.values()) source.disconnect();
-  stemSourceNodes.clear();
   for (const player of Object.values(stemPlayers)) {
     player.pause();
     player.removeAttribute("src");
@@ -1147,6 +1129,7 @@ const deactivateMobileStemMix = () => {
   if (!isMobileViewport()) return;
   mobileStemMixActivated = false;
   destroyStemPlayers();
+  if (!ws && playbackRawAssets) void rebuildAlignedClicks();
   applyMusicVolume(SELECTORS.volMusic.value);
   updateStemPlaybackStatus();
 };
@@ -1919,80 +1902,35 @@ const getCtx = () => {
   return audioCtx;
 };
 
-const prepareAlignedAsset = async (url, beats, signal) => {
+const decodePlaybackAsset = async (url, signal) => {
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`音源を読み込めません (${response.status})`);
-  const buffer = await getCtx().decodeAudioData(await response.arrayBuffer());
-  const blob = await alignedWav(buffer, beats, { signal });
-  return URL.createObjectURL(blob);
+  return getCtx().decodeAudioData(await response.arrayBuffer());
 };
-
-const initStemPlayers = async stemAssets => {
+const initStemPlayers = () => {
   destroyStemPlayers();
-  const preparationVersion = stemPreparationVersion;
-  if (hasStemAssets({ stems: stemAssets }) && !STEM_NAMES.every(name => alignedAssetUrls.includes(stemAssets[name]))) {
-    // Preserve lightweight mobile loading: parts are fetched only after a
-    // part control is used. Keep the original available while preparing.
-    const preparation = audioPreparation;
-    const urls = [];
-    try {
-      const prepared = {};
-      for (const name of STEM_NAMES) {
-        prepared[name] = await prepareAlignedAsset(stemAssets[name], getAdjustedBeats(), preparation?.signal);
-        urls.push(prepared[name]);
-        if (preparationVersion !== stemPreparationVersion) { for (const url of urls) URL.revokeObjectURL(url); return false; }
-      }
-      preparation?.signal.throwIfAborted();
-      alignedAssetUrls.push(...urls);
-      currentStemAssets = stemAssets = prepared;
-    } catch (error) {
-      for (const url of urls) URL.revokeObjectURL(url);
-      if (!preparation?.signal.aborted) {
-        SELECTORS.stemStatus.className = "stem-status err";
-        SELECTORS.stemStatus.textContent = "パートを読み込めません · 元音源を再生";
-      }
-      return false;
-    }
+  const players = alignedOutputs.get(ws?.getMediaElement())?.players;
+  if (!players || !Object.keys(players).length) {
+    if (mobileStemMixActivated) void rebuildAlignedClicks();
+    return false;
   }
-  if (!hasStemAssets({ stems: stemAssets })) return false;
-  for (const stem of STEM_NAMES) {
-    const player = new Audio();
-    player.crossOrigin = "anonymous";
-    player.src = stemAssets[stem];
-    player.dataset.stem = stem;
-    // A shared output context prevents independently opened audio devices from
-    // introducing different startup latencies for the master and each part.
-    const source = getCtx().createMediaElementSource(player);
-    if (alignedAssetUrls.includes(player.src)) alignedOutputs.set(player, connectAlignedOutput(getCtx(), source, player));
-    else source.connect(getCtx().destination);
-    stemSourceNodes.set(stem, source);
-    player.preload = isMobileViewport() ? "metadata" : "auto";
-    preserveMediaPitch(player);
-    player.playbackRate = playbackRate;
-    stemPlayers[stem] = player;
-  }
+  stemPlayers = players;
   stemReady = true;
   stemTransport.setPlayers(stemPlayers);
   applyStemMix();
   return true;
 };
-
-const audiblePlaybackClock = () => selectPlaybackClock({
-  master: ws?.getMediaElement(), players: stemPlayers,
-  activeStems: currentStemPlaybackPlan().activeStems,
-  state: stemTransport.snapshot().state,
-});
+const audiblePlaybackClock = () => ({ media: ws?.getMediaElement(), name: "shared" });
 
 const updateAlignedClickOutput = () => {
   const reference = audiblePlaybackClock().media;
-  const volume = metroOn && ws?.isPlaying() && reference && !reference.paused && !reference.seeking ? Number(SELECTORS.volMetro.value) / 100 : 0;
+  const volume = metroOn ? Number(SELECTORS.volMetro.value) / 100 : 0;
   for (const [media, output] of alignedOutputs) output.click.gain.value = media === reference ? volume : 0;
 };
-const syncMetronome = () => updateAlignedClickOutput();
 const startMetro = () => updateAlignedClickOutput();
-const stopMetro = () => {
-  for (const output of alignedOutputs.values()) output.click.gain.value = 0;
-};
+// Pausing/seeking the one media source stops its click samples as well.
+// Muting until a later JS "playing" event would drop a click at a loop start.
+const stopMetro = () => updateAlignedClickOutput();
 setInterval(() => {
   if (!ws?.isPlaying()) return;
   const { media, name } = audiblePlaybackClock();
@@ -2010,11 +1948,17 @@ setInterval(() => {
 
 const rebuildAlignedClicks = async () => {
   if (!playbackRawAssets) return;
-  const time = ws?.getCurrentTime() ?? 0, playing = !!ws?.isPlaying();
+  pendingPlaybackRestore ??= { time: ws?.getCurrentTime() ?? 0, playing: !!ws?.isPlaying() };
+  const restore = pendingPlaybackRestore;
   const { audio, video, stems } = playbackRawAssets;
-  const player = await initWaveSurfer(audio, video, stems);
+  const player = await initWaveSurfer(audio, video, stems, { activateStems: mobileStemMixActivated });
   if (!player || player !== ws) return;
-  player.once("ready", () => { if (ws !== player) return; seekAudio(time, { respectLoopRange: false }); if (playing) void player.play(); });
+  player.once("ready", () => {
+    if (ws !== player) return;
+    pendingPlaybackRestore = null;
+    seekAudio(restore.time, { respectLoopRange: false });
+    if (restore.playing) void player.play();
+  });
 };
 
 const seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
@@ -2143,7 +2087,7 @@ const updateSelectionUI = () => {
 };
 
 const updatePlayButton = () => {
-  const isPlaying = stemHoldingMaster || !!ws?.isPlaying();
+  const isPlaying = !!ws?.isPlaying();
   for (const button of [SELECTORS.btnPlay, SELECTORS.btnFsPlay]) {
     button.classList.toggle("is-playing", isPlaying);
     button.setAttribute("aria-label", isPlaying ? "一時停止" : "再生");
@@ -2171,13 +2115,6 @@ const updatePlaybackModeButtons = () => {
 const canPlayAudio = () => !!ws && audioAvailable && audioReady;
 
 const togglePlayback = () => {
-  if (stemHoldingMaster) {
-    pauseStems();
-    pauseVideo();
-    stopMetro();
-    updatePlayButton();
-    return;
-  }
   if (!ws || (!ws.isPlaying() && !canPlayAudio())) return;
   getCtx();
   if (ws.isPlaying()) {
@@ -3257,7 +3194,7 @@ const initVideoPlayer = videoUrl => {
   };
 };
 
-const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null) => {
+const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateStems = false } = {}) => {
   playbackRawAssets = { audio: audioUrl, video: videoUrl, stems: stemAssets };
   audioPreparation?.abort();
   const preparation = new AbortController();
@@ -3280,26 +3217,23 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null) => {
   alignedAssetUrls = [];
   const preparedUrls = [];
   const beats = getAdjustedBeats();
-  const prepareAsset = async url => {
-    const prepared = await prepareAlignedAsset(url, beats, preparation.signal);
-    preparedUrls.push(prepared);
-    return prepared;
-  };
+  let waveform, duration;
+  const sharedStems = [];
   try {
-    audioUrl = await prepareAsset(audioUrl);
-    if (hasStemAssets({ stems: stemAssets }) && !isMobileViewport()) {
-      const preparedStems = {};
+    const original = await decodePlaybackAsset(audioUrl, preparation.signal);
+    waveform = [original.getChannelData(0)]; duration = original.duration;
+    const tracks = [];
+    if (hasStemAssets({ stems: stemAssets }) && (!isMobileViewport() || activateStems)) {
       for (const name of STEM_NAMES) {
-        try { preparedStems[name] = await prepareAsset(stemAssets[name]); }
-        catch (error) {
-          preparation.signal.throwIfAborted();
-          // Preserve the existing visible failure/original-mix recovery path.
-          const unavailable = URL.createObjectURL(new Blob([], { type: "audio/wav" }));
-          preparedUrls.push(unavailable); preparedStems[name] = unavailable;
-        }
+        let track = null;
+        try { track = await decodePlaybackAsset(stemAssets[name], preparation.signal); }
+        catch (error) { preparation.signal.throwIfAborted(); }
+        tracks.push(track);
+        sharedStems.push({ name, url: stemAssets[name], unavailable: !track });
       }
-      stemAssets = preparedStems;
     }
+    const blob = await alignedWav(original, beats, { tracks, signal: preparation.signal });
+    audioUrl = URL.createObjectURL(blob); preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
   } catch (error) {
     for (const url of preparedUrls) URL.revokeObjectURL(url);
@@ -3311,7 +3245,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null) => {
   }
   alignedAssetUrls = preparedUrls;
   currentStemAssets = hasStemAssets({ stems: stemAssets }) ? stemAssets : null;
-  mobileStemMixActivated = false;
+  mobileStemMixActivated = activateStems;
 
   waveformDrag = null;
   cancelWaveformPreviewSeek();
@@ -3326,6 +3260,9 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null) => {
     waveColor: "#2e2e2e",
     progressColor: "#f97316",
     url: audioUrl,
+    // Reuse the original waveform: decoding the multichannel container again
+    // would duplicate every stem solely to draw a two-dimensional waveform.
+    peaks: waveform, duration,
     height: isMobileViewport() ? 44 : 64,
     barWidth: 2,
     barGap: 1,
@@ -3334,8 +3271,8 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null) => {
   });
 
   masterSourceNode = getCtx().createMediaElementSource(ws.getMediaElement());
-  alignedOutputs.set(ws.getMediaElement(), connectAlignedOutput(getCtx(), masterSourceNode, ws.getMediaElement()));
-  if (currentStemAssets && !isMobileViewport()) initStemPlayers(currentStemAssets);
+  alignedOutputs.set(ws.getMediaElement(), connectAlignedOutput(getCtx(), masterSourceNode, ws.getMediaElement(), sharedStems));
+  if (sharedStems.length) initStemPlayers();
   applyMusicVolume(SELECTORS.volMusic.value);
   ws.setPlaybackRate?.(playbackRate, true);
   preserveMediaPitch(ws.getMediaElement?.());
@@ -3577,7 +3514,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null) => {
   });
 
   ws.on("pause", () => {
-    if (stemHoldingMaster || ws.isPlaying()) return;
+    if (ws.isPlaying()) return;
     logPlaybackDiagnostic("audio-pause", mediaDiagnosticDetails(audioMedia));
     pauseVideo();
     pauseStems();
@@ -3659,7 +3596,7 @@ const setupControls = () => {
   };
   SELECTORS.btnFsAutoNext.onclick = SELECTORS.btnAutoNext.onclick;
   SELECTORS.btnGenerateStems.onclick = () => generateStems();
-  document.getElementById("btn-retry-stems").onclick = () => stemTransport.retry();
+  document.getElementById("btn-retry-stems").onclick = () => rebuildAlignedClicks();
   document.getElementById("btn-original-mix").onclick = () => stemTransport.useOriginal();
   SELECTORS.btnExportStemMix.onclick = () => exportStemMix();
   SELECTORS.btnBpmHalf.onclick = () => {
@@ -3788,6 +3725,7 @@ const setupControls = () => {
 };
 
 const showResult = (data, id, { autoplay = false } = {}) => {
+  pendingPlaybackRestore = null;
   currentData = data;
   currentId = id;
   SELECTORS.btnEditSections.hidden = !hasServer || staticLibraryMode;

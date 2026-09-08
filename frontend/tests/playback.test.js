@@ -177,20 +177,3 @@ test('元音源を明示選択した後は復帰イベントでパートを勝�
   assert.equal(transport.snapshot().state, 'original');
   assert.equal(players.drums.paused, true);
 });
-
-test('クリックは無音の元音源ではなく再生中のパートの時計を選ぶ', async () => {
-  const { selectPlaybackClock } = await import('../src/playback-clock.js');
-  const master = { currentTime: 4 };
-  const vocals = { currentTime: 4.08, paused: false, seeking: false, muted: false, volume: 0.8, readyState: 4 };
-  const drums = { ...vocals, currentTime: 4.09 };
-  const input = { master, players: { vocals, drums }, activeStems: ['vocals', 'drums'], state: 'stems' };
-  assert.equal(selectPlaybackClock(input).media, vocals);
-  vocals.muted = true;
-  assert.equal(selectPlaybackClock(input).media, drums);
-  drums.seeking = true;
-  assert.equal(selectPlaybackClock(input).media, master);
-  vocals.muted = false;
-  assert.equal(selectPlaybackClock({ ...input, state: 'starting' }).media, master);
-  assert.equal(selectPlaybackClock({ ...input, state: 'original' }).media, master);
-  assert.equal(selectPlaybackClock({ ...input, activeStems: [] }).media, master);
-});

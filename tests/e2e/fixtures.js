@@ -39,12 +39,12 @@ export const baselineResult = {
 
 // Non-silent reference attacks for PCM measurements, independent of click
 // synthesis. A silent fixture cannot expose decoder/time-stretch offsets.
-export const pulseWav = (seconds = 8, sampleRate = 44100) => {
+export const pulseWav = (seconds = 8, sampleRate = 44100, frequency = 470) => {
   const buffer = silentWav(seconds, sampleRate);
   for (let i = 0; i < seconds * sampleRate; i++) {
     const time = i / sampleRate;
     const phase = (time - 1) % 0.5;
-    const value = time >= 1 && phase < 0.06 ? 0.7 * Math.sin(2 * Math.PI * 470 * phase) * Math.exp(-55 * phase) : 0;
+    const value = time >= 1 && phase < 0.06 ? 0.7 * Math.sin(2 * Math.PI * frequency * phase) * Math.exp(-55 * phase) : 0;
     buffer.writeInt16LE(Math.round(value * 32767), 44 + i * 2);
   }
   return buffer;

@@ -12,8 +12,17 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.__media = { stems: {}, original: null, reject: [] };
     const NativeAudio = window.Audio;
+    const created = [];
+    Object.defineProperty(window.__media, 'stems', { get: () => Object.fromEntries(created.filter(media => media.dataset.stem).map(media => [media.dataset.stem, media])) });
+    const nativeFetch = window.fetch;
+    window.fetch = (input, ...args) => {
+      const name = (input instanceof Request ? input.url : String(input)).match(/\/stems\/[^/]+\/(\w+)\.(?:wav|mp3)/)?.[1];
+      if (window.__media.reject.includes(name)) return Promise.resolve(new Response('', { status: 503 }));
+      return nativeFetch(input, ...args);
+    };
     window.Audio = function (...args) {
       const media = new NativeAudio(...args);
+      created.push(media);
       const name = String(args[0]).match(/\/stems\/[^/]+\/(\w+)\.(?:wav|mp3)/)?.[1];
       if (name) window.__media.stems[name] = media;
       return media;
@@ -24,7 +33,7 @@ test.beforeEach(async ({ page }) => {
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function (target, ...args) {
       const result = connect.call(this, target, ...args);
-      if (this instanceof ChannelSplitterNode && args[0] === 2) {
+      if (this instanceof ChannelSplitterNode && args[0] === this.numberOfOutputs - 1) {
         const analyser = this.context.createAnalyser(); analyser.fftSize = 1024;
         const zero = this.context.createGain(); zero.gain.value = 0;
         connect.call(target, analyser); connect.call(analyser, zero); connect.call(zero, this.context.destination);
@@ -64,12 +73,17 @@ const originalVolume = page => page.evaluate(() => window.__media.original?.volu
 
 for (const rejected of [['vocals'], ['vocals', 'drums', 'bass', 'other']]) {
   test(`${rejected.length}パートの失敗を表示し元音源へ戻り、再試行できる`, async ({ page }) => {
-    await page.addInitScript(names => { window.__media.reject = names; }, rejected);
+    let blocked = true;
+    await page.route('**/stems/e2e-baseline/*', route => {
+      const name = route.request().url().match(/\/(\w+)\.(?:wav|mp3)/)?.[1];
+      return blocked && rejected.includes(name) ? route.fulfill({ status: 503, body: '' })
+        : route.fulfill({ contentType: 'audio/wav', body: silentWav(30) });
+    });
     await start(page);
     await expect(page.locator('#stem-status')).toContainText('再生できません');
     await expect.poll(() => originalVolume(page)).toBeGreaterThan(0);
     expect(await page.evaluate(() => Object.values(window.__media.stems).every(media => media.muted && media.paused))).toBe(true);
-    await page.evaluate(() => { window.__media.reject = []; });
+    blocked = false;
     await page.locator('#btn-retry-stems').click();
     await expect(page.locator('#stem-status')).toContainText('自動同期');
     await expect.poll(() => originalVolume(page)).toBe(0);
@@ -97,6 +111,8 @@ test('パートと元音源の読み込み復帰時に同期し直す', async ({
     await expect.poll(() => page.evaluate(() => Object.values(window.__media.stems).every(media => !media.seeking))).toBe(true);
     await page.evaluate(target => {
       const media = target === 'original' ? window.__media.original : window.__media.stems[target];
+      window.__readyDescriptors ??= new Map();
+      window.__readyDescriptors.set(media, Object.getOwnPropertyDescriptor(media, 'readyState'));
       Object.defineProperty(media, 'readyState', { configurable: true, get: () => 2 });
       media.dispatchEvent(new Event('waiting'));
     }, target);
@@ -104,7 +120,9 @@ test('パートと元音源の読み込み復帰時に同期し直す', async ({
     expect(await page.evaluate(() => Object.values(window.__media.stems).every(media => media.paused && media.muted))).toBe(true);
     await page.evaluate(target => {
       const media = target === 'original' ? window.__media.original : window.__media.stems[target];
-      delete media.readyState;
+      const descriptor = window.__readyDescriptors.get(media);
+      if (descriptor) Object.defineProperty(media, 'readyState', descriptor);
+      else delete media.readyState;
       media.dispatchEvent(new Event(target === 'original' ? 'playing' : 'canplay'));
     }, target);
     await expect(page.locator('#stem-status')).toContainText('自動同期');

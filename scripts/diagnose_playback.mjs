@@ -12,13 +12,15 @@ import fs from 'node:fs';
 import http from 'node:http';
 const root=fs.mkdtempSync(path.join(os.tmpdir(), 'practice-lab-audio-audit-')) + path.sep;
 const wav=pulseWav();
+const stemWavs=Object.fromEntries(["vocals", "drums", "bass", "other"].map((name,i)=>[name,pulseWav(8,44100,[220,470,82.4,659.25][i])]));
+const originalWav=wav;
 const beats=Array.from({length:12},(_,i)=>1+i*.5);
 const fixtureResult={...baselineResult,duration:8,beats,downbeats:[1,3,5],sections:[{label:'verse',start_time:1,end_time:4,start_bar:1,end_bar:2,bar_count:2}]};
 const server=http.createServer((req,res)=>{
  const url=req.url.split('?')[0];
  const json=url==='/healthz'?{ok:true}:url==='/results/manifest.json'?[baselineSession]:url==='/results/e2e-baseline.json'?fixtureResult:url.endsWith('/library')?{tags:[]}:url==='/library/folders'?[]:null;
  if(json){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(json));return;}
- if(url.startsWith('/audio/')||url.startsWith('/stems/')){res.setHeader('Content-Type','audio/wav');res.setHeader('Accept-Ranges','bytes');const match=req.headers.range?.match(/bytes=(\d+)-(\d*)/);if(match){const start=Number(match[1]),end=match[2]?Number(match[2]):wav.length-1;res.statusCode=206;res.setHeader('Content-Range',`bytes ${start}-${end}/${wav.length}`);res.setHeader('Content-Length',end-start+1);res.end(wav.subarray(start,end+1));}else{res.setHeader('Content-Length',wav.length);res.end(wav);}return;}
+ if(url.startsWith('/audio/')||url.startsWith('/stems/')){const name=url.match(/\/(vocals|drums|bass|other)\./)?.[1];const wav=stemWavs[name]??originalWav;res.setHeader('Content-Type','audio/wav');res.setHeader('Accept-Ranges','bytes');const match=req.headers.range?.match(/bytes=(\d+)-(\d*)/);if(match){const start=Number(match[1]),end=match[2]?Number(match[2]):wav.length-1;res.statusCode=206;res.setHeader('Content-Range',`bytes ${start}-${end}/${wav.length}`);res.setHeader('Content-Length',end-start+1);res.end(wav.subarray(start,end+1));}else{res.setHeader('Content-Length',wav.length);res.end(wav);}return;}
  const file=url==='/probe-worklet.js'?path.join(repository, 'tests/audio/meter.js'):path.join(repository, 'public')+'/'+(url==='/'?'index.html':url);
  try{res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));}catch{res.statusCode=404;res.end();}
 });
@@ -29,8 +31,11 @@ const errors=[];page.on('pageerror',error=>errors.push(error.message));
 try {
 await page.addInitScript(()=>{
  localStorage.clear();
- window.__probe={events:[],clocks:[],operations:[],players:[],label:'init'};
+ window.__probe={events:[],clocks:[],operations:[],players:[],parts:[],label:'init'};
  const p=window.__probe,Native=window.AudioContext,connect=AudioNode.prototype.connect;
+ const NativeAudio = window.Audio;
+ window.Audio = function(...args){const media=new NativeAudio(...args);p.parts.push(media);return media;};
+ window.Audio.prototype=NativeAudio.prototype;
  window.AudioContext=class extends Native {
   constructor(...args){
    super(...args);
@@ -50,10 +55,10 @@ await page.addInitScript(()=>{
   if(target===this.context.destination&&this.context._merger){
    return connect.call(this,this.context._merger,0,this._probeChannel??5);
   }
-  if(this._probeChannel!==undefined)target._probeChannel=this instanceof ChannelSplitterNode&&args[0]===2?5:this._probeChannel;
+  if(this._probeChannel!==undefined)target._probeChannel=this instanceof ChannelSplitterNode?(args[0]===this.numberOfOutputs-1?5:Math.floor((args[0]??0)/2)):this._probeChannel;
   return connect.call(this,target,...args);
  };
- setInterval(()=>{if(p.ctx)p.clocks.push({t:p.ctx.currentTime,label:p.label,latency:p.ctx.outputLatency,players:p.players.map(m=>({src:m.src,time:m.currentTime,rate:m.playbackRate,paused:m.paused,seeking:m.seeking,volume:m.volume,muted:m.muted}))});},100);
+ setInterval(()=>{if(p.ctx)p.clocks.push({t:p.ctx.currentTime,label:p.label,latency:p.ctx.outputLatency,players:[...new Set([...p.players,...p.parts.filter(m=>m.dataset.stem)])].map(m=>({src:m.src,time:m.currentTime,rate:m.playbackRate,paused:m.paused,seeking:m.seeking,volume:m.volume,muted:m.muted}))});},100);
 });
 await page.goto('http://127.0.0.1:'+server.address().port+'/');
 await page.locator('#btn-play').waitFor({state:'visible'});
@@ -77,14 +82,19 @@ await mark('rate-075-loop');await page.locator('#playback-rate').evaluate((el,va
 await mark('rate-100-loop');await page.locator('#playback-rate').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},'1.00');await wait(8000);
 await mark('rate-025-loop');await page.locator('#playback-rate').evaluate(el=>{el.value='0.25';el.dispatchEvent(new Event('input',{bubbles:true}));});await wait(26000);
 await mark('rate-125-loop');await page.locator('#playback-rate').evaluate(el=>{el.value='1.25';el.dispatchEvent(new Event('input',{bubbles:true}));});await wait(9000);
-const result=await page.evaluate(()=>{const p=window.__probe;return {events:p.events,clocks:p.clocks,operations:p.operations};});
+await mark('on-beat-loop');await page.locator('#playback-rate').evaluate(el=>{el.value='0.70';el.dispatchEvent(new Event('input',{bubbles:true}));});await page.locator('#btn-clear-range').click();await drag(1,3);await wait(12000);
+const result=await page.evaluate(()=>{const p=window.__probe;return {events:p.events,clocks:p.clocks,operations:p.operations,mediaSources:p.players.length};});
 fs.writeFileSync(root+'matrix-result.json',JSON.stringify(result));
 const summary = [];
-assert.equal(new Set(result.operations.map(e=>e.label)).size, 12);
+assert.equal(result.mediaSources, 1, "Parts and click must share one media decoder");
+assert.equal(new Set(result.operations.map(e=>e.label)).size, 13);
 for (const label of new Set(result.events.map(e=>e.label))) {
- const events=result.events.filter(e=>e.label===label), music=events.filter(e=>e.ch===1),clicks=events.filter(e=>e.ch===5);
- const differences=clicks.map(c=>music.reduce((best,m)=>Math.abs(c.t-m.t)<Math.abs(best)?c.t-m.t:best,Infinity)).filter(d=>Math.abs(d)<0.25);
- summary.push({label,samples:differences.length,maximumMs:Math.max(...differences.map(Math.abs))*1000});
+ const events=result.events.filter(e=>e.label===label), clicks=events.filter(e=>e.ch===5);
+ for (let channel=1;channel<=4;channel++) {
+  const music=events.filter(e=>e.ch===channel);
+  const differences=clicks.map(c=>music.reduce((best,m)=>Math.abs(c.t-m.t)<Math.abs(best)?c.t-m.t:best,Infinity)).filter(d=>Math.abs(d)<0.25);
+  summary.push({label,part:["vocals","drums","bass","other"][channel-1],samples:differences.length,maximumMs:Math.max(...differences.map(Math.abs))*1000});
+ }
 }
 fs.writeFileSync(root+'summary.json',JSON.stringify({summary,errors},null,2));
 console.log(JSON.stringify({output:root,summary,errors},null,2));

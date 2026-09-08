@@ -55,7 +55,7 @@ const sanitizePlaybackEvent = (input, now = new Date()) => {
   };
   const sessionId = String(input?.sessionId || "").replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 160);
   if (sessionId) event.sessionId = sessionId;
-  if (["original", "vocals", "drums", "bass", "other"].includes(input?.reference)) event.reference = input.reference;
+  if (["shared", "original", "vocals", "drums", "bass", "other"].includes(input?.reference)) event.reference = input.reference;
   for (const key of NUMBER_FIELDS) {
     const value = finiteNumber(input?.[key]);
     if (value !== undefined) event[key] = value;

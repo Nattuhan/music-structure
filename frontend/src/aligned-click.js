@@ -1,4 +1,4 @@
-// Carry the click as a third channel of the same media file. Chromium's pitch
+// Carry every part and the click as channels of ONE media file. Chromium's pitch
 // preservation moves audio transients relative to currentTime; an oscillator
 // scheduled from that clock cannot follow those moves. Channels in one decoder
 // share both the time stretch and every seek, without a device-specific offset.
@@ -18,9 +18,12 @@ export const clickWave = sampleRate => {
   return wave;
 };
 
-export const alignedWav = async (buffer, beats, { signal, yieldTask = () => new Promise(resolve => setTimeout(resolve, 0)) } = {}) => {
+export const alignedWav = async (buffer, beats, { tracks = [], signal, yieldTask = () => new Promise(resolve => setTimeout(resolve, 0)) } = {}) => {
   const { sampleRate, length } = buffer;
-  const channels = 3, bytesPerFrame = channels * 4;
+  const buffers = [buffer, ...tracks];
+  if (buffers.some(track => track && track.sampleRate !== sampleRate)) throw new Error('サンプルレートが一致しません');
+  const channels = buffers.length * 2 + 1, bytesPerFrame = channels * 4;
+  const planes = buffers.flatMap(track => track ? [track.getChannelData(0), track.getChannelData(Math.min(1, track.numberOfChannels - 1))] : [null, null]);
   const header = new Uint8Array(44);
   const view = new DataView(header.buffer);
   const text = (offset, value) => [...value].forEach((char, i) => view.setUint8(offset + i, char.charCodeAt(0)));
@@ -30,7 +33,6 @@ export const alignedWav = async (buffer, beats, { signal, yieldTask = () => new 
   view.setUint16(22, channels, true); view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * bytesPerFrame, true); view.setUint16(32, bytesPerFrame, true); view.setUint16(34, 32, true);
   text(36, 'data'); view.setUint32(40, length * bytesPerFrame, true);
-  const left = buffer.getChannelData(0), right = buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1));
   const click = clickWave(sampleRate);
   const positions = [...new Set(beats.filter(Number.isFinite).filter(t => t >= 0).map(t => Math.round(t * sampleRate)))].sort((a, b) => a - b);
   const chunks = [header];
@@ -41,11 +43,15 @@ export const alignedWav = async (buffer, beats, { signal, yieldTask = () => new 
     signal?.throwIfAborted();
     const count = Math.min(sampleRate, length - start);
     const samples = new Float32Array(count * channels);
-    for (let i = 0; i < count; i++) { samples[i * 3] = left[start + i]; samples[i * 3 + 1] = right[start + i]; }
+    for (let channel = 0; channel < planes.length; channel++) {
+      const plane = planes[channel];
+      if (!plane) continue;
+      for (let i = 0; i < count; i++) samples[i * channels + channel] = plane[start + i] ?? 0;
+    }
     while (beatIndex < positions.length && positions[beatIndex] + click.length <= start) beatIndex++;
     for (let j = beatIndex; j < positions.length && positions[j] < start + count; j++) {
       const offset = positions[j] - start;
-      for (let k = Math.max(0, -offset); k < click.length && offset + k < count; k++) samples[(offset + k) * 3 + 2] += click[k];
+      for (let k = Math.max(0, -offset); k < click.length && offset + k < count; k++) samples[(offset + k) * channels + channels - 1] += click[k];
     }
     chunks.push(samples);
     if (start % (sampleRate * 8) === 0) await yieldTask();
@@ -54,25 +60,57 @@ export const alignedWav = async (buffer, beats, { signal, yieldTask = () => new 
   return new Blob(chunks, { type: 'audio/wav' });
 };
 
-export const connectAlignedOutput = (ctx, source, media) => {
-  const splitter = ctx.createChannelSplitter(3);
-  const stereo = ctx.createChannelMerger(2);
-  const music = ctx.createGain(), click = ctx.createGain();
+// The stem "players" below are gain controls over the same media, not separate
+// decoders. Their time/seek/rate always comes from that one transport.
+export const connectAlignedOutput = (ctx, source, media, stems = []) => {
+  const splitter = ctx.createChannelSplitter(3 + stems.length * 2);
+  const click = ctx.createGain(); click.gain.value = 0;
+  const nodes = [splitter, click], removals = [], players = {};
   source.connect(splitter);
-  splitter.connect(stereo, 0, 0); splitter.connect(stereo, 1, 1);
-  stereo.connect(music); music.connect(ctx.destination);
-  splitter.connect(click, 2); click.gain.value = 0; click.connect(ctx.destination);
+  const musicGain = track => {
+    const stereo = ctx.createChannelMerger(2), gain = ctx.createGain();
+    splitter.connect(stereo, track * 2, 0); splitter.connect(stereo, track * 2 + 1, 1);
+    stereo.connect(gain); gain.connect(ctx.destination); nodes.push(stereo, gain);
+    return gain;
+  };
+  const original = musicGain(0);
   let volume = media.volume, muted = media.muted;
-  // Native volume/mute would also attenuate the clock channel. Keep music
-  // controls after the splitter so click volume is independent, including
-  // when every music part is muted.
   media.volume = 1; media.muted = false;
-  const update = () => { music.gain.value = muted ? 0 : volume; };
+  const update = () => { original.gain.value = muted ? 0 : volume; };
   Object.defineProperty(media, 'volume', { configurable: true, get: () => volume, set: value => { volume = Math.max(0, Math.min(1, Number(value) || 0)); update(); } });
   Object.defineProperty(media, 'muted', { configurable: true, get: () => muted, set: value => { muted = !!value; update(); } });
   update();
-  return { click, destroy() {
-    for (const node of [splitter, stereo, music, click]) node.disconnect();
+  stems.forEach(({ name, url, unavailable }, index) => {
+    const player = new Audio(), gain = musicGain(index + 1);
+    player.dataset.stem = name;
+    let partVolume = 1, partMuted = true, partPaused = true;
+    const apply = () => { gain.gain.value = partMuted || partPaused ? 0 : partVolume; };
+    Object.defineProperties(player, {
+      src: { configurable: true, get: () => url },
+      currentTime: { configurable: true, get: () => media.currentTime, set: value => { if (Math.abs(media.currentTime - value) > 0.005) media.currentTime = value; } },
+      duration: { configurable: true, get: () => media.duration },
+      playbackRate: { configurable: true, get: () => media.playbackRate, set: value => { if (media.playbackRate !== value) media.playbackRate = value; } },
+      seeking: { configurable: true, get: () => media.seeking },
+      readyState: { configurable: true, get: () => media.readyState },
+      error: { configurable: true, get: () => unavailable ? new Error('Stem unavailable') : media.error },
+      paused: { configurable: true, get: () => partPaused || media.paused },
+      muted: { configurable: true, get: () => partMuted, set: value => { partMuted = !!value; apply(); } },
+      volume: { configurable: true, get: () => partVolume, set: value => { partVolume = Math.max(0, Math.min(1, Number(value) || 0)); apply(); } },
+    });
+    player.play = () => { if (unavailable) return Promise.reject(new Error('Stem unavailable')); partPaused = false; apply(); return Promise.resolve(); };
+    player.pause = () => { partPaused = true; apply(); };
+    player.load = () => {};
+    for (const name of ['seeking', 'seeked', 'canplay']) {
+      const forward = () => player.dispatchEvent(new Event(name));
+      media.addEventListener(name, forward); removals.push(() => media.removeEventListener(name, forward));
+    }
+    apply(); players[name] = player;
+  });
+  splitter.connect(click, 2 + stems.length * 2); click.connect(ctx.destination);
+  return { click, players, destroy() {
+    removals.forEach(remove => remove());
+    for (const player of Object.values(players)) player.pause();
+    for (const node of nodes) node.disconnect();
     delete media.volume; delete media.muted;
     media.volume = volume; media.muted = muted;
   } };

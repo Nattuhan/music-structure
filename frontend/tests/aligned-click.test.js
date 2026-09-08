@@ -34,3 +34,25 @@ test('モノラル、重複拍、不正な拍、末尾、キャンセルを扱�
   const controller = new AbortController();
   await assert.rejects(alignedWav(buffer, [1], { signal: controller.signal, yieldTask: async () => controller.abort() }), { name: 'AbortError' });
 });
+
+test('4パートと元音源を11チャンネルへ束ね、欠けたパートだけ無音にする', async () => {
+  const original = source(2400, 8000);
+  const vocal = source(2400, 8000, false), bass = source(1200, 8000);
+  const tracks = [vocal, null, bass, original];
+  const blob = await alignedWav(original, [0.1], { tracks });
+  const bytes = await blob.arrayBuffer(), header = new DataView(bytes);
+  assert.equal(header.getUint16(22, true), 11);
+  const samples = new Float32Array(bytes, 44);
+  for (let i = 0; i < original.length; i++) {
+    assert.equal(samples[i * 11], original.getChannelData(0)[i]);
+    assert.equal(samples[i * 11 + 1], original.getChannelData(1)[i]);
+    assert.equal(samples[i * 11 + 2], vocal.getChannelData(0)[i]);
+    assert.equal(samples[i * 11 + 3], vocal.getChannelData(0)[i]);
+    assert.equal(samples[i * 11 + 4], 0);
+    assert.equal(samples[i * 11 + 5], 0);
+    assert.equal(samples[i * 11 + 6], bass.getChannelData(0)[i] ?? 0);
+    assert.equal(samples[i * 11 + 7], bass.getChannelData(1)[i] ?? 0);
+    assert.equal(samples[i * 11 + 8], original.getChannelData(0)[i]);
+    assert.equal(samples[i * 11 + 9], original.getChannelData(1)[i]);
+  }
+});
