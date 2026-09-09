@@ -108,6 +108,7 @@ def submit_job_spec(spec: dict) -> dict:
                 end_sec=request.get("endSec"),
                 click_times=request.get("clickTimes", []),
                 click_volume=request.get("clickVolume", 0),
+                click_sound=request.get("clickSound", "classic"),
                 output_filename=request.get("outputFilename", "stem-mix.mp3"),
                 job_id=job_id,
             ),

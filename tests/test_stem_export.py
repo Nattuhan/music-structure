@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +9,19 @@ from practice_lab import services
 
 
 class StemExportTests(unittest.TestCase):
+    def test_creates_distinct_click_waveforms_for_each_sound(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(services, "DATA_WORK_DIR", Path(temp_dir)):
+                payloads = []
+                for sound in ("classic", "wood", "hihat"):
+                    path = services.create_export_click_track([0], 85, sound)
+                    with wave.open(str(path), "rb") as source:
+                        self.assertEqual(source.getframerate(), 44100)
+                        self.assertEqual(source.getnchannels(), 1)
+                        payloads.append(source.readframes(source.getnframes()))
+            self.assertEqual(len(set(payloads)), 3)
+            self.assertTrue(all(any(payload) for payload in payloads))
+
     def test_exports_only_enabled_stems_with_volume_and_range(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -110,6 +124,7 @@ class StemExportTests(unittest.TestCase):
                     {"drums": 100},
                     click_times=[0, 0.5, 1.0],
                     click_volume=85,
+                    click_sound="wood",
                 )
 
             command = run.call_args.args[0]

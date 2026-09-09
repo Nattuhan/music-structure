@@ -888,7 +888,7 @@ test("デスクトップの再生設定を固定保存先から復元して変�
   await page.addInitScript(() => {
     window.__savedPlayerSettings = null;
     window.practiceLabDesktop = {
-      getPlayerSettings: () => ({ volMusic: 37, volMetro: 64, playbackRate: 0.8 }),
+      getPlayerSettings: () => ({ volMusic: 37, volMetro: 64, playbackRate: 0.8, clickSound: "wood" }),
       savePlayerSettings: settings => {
         window.__savedPlayerSettings = structuredClone(settings);
         return { ok: true, settings };
@@ -903,12 +903,15 @@ test("デスクトップの再生設定を固定保存先から復元して変�
   await expect(page.locator("#vol-music")).toHaveValue("37");
   await expect(page.locator("#vol-metro")).toHaveValue("64");
   await expect(page.locator("#playback-rate")).toHaveValue("0.8");
+  await expect(page.locator("#click-sound")).toHaveValue("wood");
 
   await page.locator("#vol-music").evaluate(element => {
     element.value = "52";
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.volMusic)).toBe(52);
+  await page.locator("#click-sound").selectOption("hihat");
+  await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.clickSound)).toBe("hihat");
 });
 
 test("アップデート確認の結果を設定画面へ表示する", async ({ page }) => {

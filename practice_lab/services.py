@@ -585,6 +585,7 @@ def export_stem_mix(
     end_sec: float | None = None,
     click_times: list[float] | None = None,
     click_volume: float = 0,
+    click_sound: str = "classic",
 ) -> Path:
     """Render the enabled stems and their current volume levels to a temporary MP3."""
     active_stems: list[tuple[str, float]] = []
@@ -605,6 +606,8 @@ def export_stem_mix(
         raise ValueError("Invalid click times")
     if not 0 <= click_volume <= 100:
         raise ValueError("Invalid click volume")
+    if click_sound not in {"classic", "wood", "hihat"}:
+        raise ValueError("Invalid click sound")
 
     stem_dir = (PUBLIC_STEMS_DIR / video_id).resolve()
     if PUBLIC_STEMS_DIR.resolve() not in stem_dir.parents:
@@ -628,7 +631,7 @@ def export_stem_mix(
 
     click_path = None
     if click_times and click_volume > 0:
-        click_path = create_export_click_track(click_times, click_volume)
+        click_path = create_export_click_track(click_times, click_volume, click_sound)
         command.extend(["-i", str(click_path)])
 
     filters = []
@@ -663,7 +666,7 @@ def export_stem_mix(
     return output_path
 
 
-def create_export_click_track(click_times: list[float], volume: float) -> Path:
+def create_export_click_track(click_times: list[float], volume: float, click_sound: str = "classic") -> Path:
     sample_rate = 44100
     click_duration = 0.055
     total_frames = max(1, math.ceil((click_times[-1] + click_duration) * sample_rate))
@@ -677,9 +680,20 @@ def create_export_click_track(click_times: list[float], volume: float) -> Path:
             if frame >= total_frames:
                 break
             elapsed = offset / sample_rate
-            envelope = math.exp(-elapsed * 75)
-            square = 1 if (offset * 3600 // sample_rate) % 2 == 0 else -1
-            value = samples[frame] + round(peak * envelope * square)
+            attack = min(1, elapsed / 0.0015)
+            if click_sound == "wood":
+                envelope = math.exp(-elapsed / 0.012)
+                tone = math.sin(2 * math.pi * 950 * elapsed) * 0.72 + math.sin(2 * math.pi * 1450 * elapsed) * 0.28
+            elif click_sound == "hihat":
+                envelope = math.exp(-elapsed / 0.006)
+                # A deterministic noise burst keeps repeated exports identical.
+                noise = ((offset * 1103515245 + 12345) & 0x7FFFFFFF) / 0x3FFFFFFF - 1
+                previous = (((offset - 1) * 1103515245 + 12345) & 0x7FFFFFFF) / 0x3FFFFFFF - 1 if offset else 0
+                tone = (noise - previous) * 0.62
+            else:
+                envelope = math.exp(-elapsed / 0.009)
+                tone = math.sin(2 * math.pi * 1800 * elapsed)
+            value = samples[frame] + round(peak * attack * envelope * tone)
             samples[frame] = max(-32768, min(32767, value))
     with tempfile.NamedTemporaryFile(
         prefix="stem-export-click-", suffix=".wav", dir=DATA_WORK_DIR, delete=False
@@ -702,6 +716,7 @@ def create_stem_mix_export(
     end_sec: float | None = None,
     click_times: list[float] | None = None,
     click_volume: float = 0,
+    click_sound: str = "classic",
     output_filename: str = "stem-mix.mp3",
     job_id: str,
 ) -> dict:
@@ -713,6 +728,7 @@ def create_stem_mix_export(
         end_sec=end_sec,
         click_times=click_times,
         click_volume=click_volume,
+        click_sound=click_sound,
     )
     export_dir = DATA_WORK_DIR / "stem-exports"
     export_dir.mkdir(parents=True, exist_ok=True)

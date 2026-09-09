@@ -11,6 +11,7 @@ test("再生・音量・曲別補正の設定だけを保存対象にする", ()
   assert.deepEqual(sanitizePlayerSettings({
     volMusic: 72,
     volMetro: 31,
+    clickSound: "wood",
     playbackRate: 0.8,
     "bpmFactor:session-1": 2,
     stemMix: { vocals: 90, drums: 55 },
@@ -18,6 +19,7 @@ test("再生・音量・曲別補正の設定だけを保存対象にする", ()
   }), {
     volMusic: 72,
     volMetro: 31,
+    clickSound: "wood",
     playbackRate: 0.8,
     "bpmFactor:session-1": 2,
     stemMix: { vocals: 90, drums: 55 },

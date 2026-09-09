@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { alignedWav, clickWave } from '../src/aligned-click.js';
+import { CLICK_SOUND_IDS, normalizeClickSound } from '../src/click-renderer-worklet-source.js';
+
+test('クリック音は共通の3種類だけを受け付け、不正値は標準へ戻す', () => {
+  assert.deepEqual(CLICK_SOUND_IDS, ['classic', 'wood', 'hihat']);
+  assert.equal(normalizeClickSound('wood'), 'wood');
+  assert.equal(normalizeClickSound('unknown'), 'classic');
+  assert.equal(normalizeClickSound(undefined), 'classic');
+});
 
 const source = (length = 24000, sampleRate = 8000, stereo = true) => {
   const left = Float32Array.from({ length }, (_, i) => Math.sin(i * 0.03) * 0.4);

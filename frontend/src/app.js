@@ -8,6 +8,7 @@ import { extractWaveformPeaks } from "./waveform-peaks.js";
 import { mediaSyncAction, planStemPlayback } from "./playback-sync.js";
 import { createStemTransport } from "./stem-transport.js";
 import { alignedWav, connectAlignedOutput, loadClickRenderer } from "./aligned-click.js";
+import { normalizeClickSound } from "./click-renderer-worklet-source.js";
 import { videoClickAction } from "./video-gestures.js";
 
 const lucide = { createIcons: renderIcons };
@@ -206,6 +207,7 @@ const SELECTORS = {
   volMusicVal: document.getElementById("vol-music-val"),
   volMetro: document.getElementById("vol-metro"),
   volMetroVal: document.getElementById("vol-metro-val"),
+  clickSound: document.getElementById("click-sound"),
   playbackRate: document.getElementById("playback-rate"),
   playbackRateVal: document.getElementById("playback-rate-val"),
   btnSpeedReset: document.getElementById("btn-speed-reset"),
@@ -1234,6 +1236,7 @@ const exportStemMix = async () => {
         endSec: range?.end ?? null,
         clickTimes,
         clickVolume: includeClick ? Number(SELECTORS.volMetro.value) : 0,
+        clickSound: normalizeClickSound(SELECTORS.clickSound.value),
         outputFilename: downloadName,
       }),
     });
@@ -1925,9 +1928,11 @@ const audiblePlaybackClock = () => ({ media: ws?.getMediaElement(), name: "share
 const updateAlignedClickOutput = () => {
   const reference = audiblePlaybackClock().media;
   const volume = metroOn ? Number(SELECTORS.volMetro.value) / 100 : 0;
+  const clickSound = normalizeClickSound(SELECTORS.clickSound?.value);
   for (const [media, output] of alignedOutputs) {
     output.click.gain.value = media === reference ? volume : 0;
     output.setPlaybackRate(playbackRate);
+    output.setClickSound(clickSound);
   }
 };
 const startMetro = () => updateAlignedClickOutput();
@@ -3684,6 +3689,12 @@ const setupControls = () => {
 
   setVol(SELECTORS.volMusic, SELECTORS.volMusicVal, "volMusic", applyMusicVolume);
   setVol(SELECTORS.volMetro, SELECTORS.volMetroVal, "volMetro", updateAlignedClickOutput);
+  SELECTORS.clickSound.value = normalizeClickSound(cfg().clickSound);
+  SELECTORS.clickSound.onchange = () => {
+    SELECTORS.clickSound.value = normalizeClickSound(SELECTORS.clickSound.value);
+    saveCfg("clickSound", SELECTORS.clickSound.value);
+    updateAlignedClickOutput();
+  };
   SELECTORS.playbackRate.oninput = () => applyPlaybackRate(SELECTORS.playbackRate.value);
   SELECTORS.btnSpeedReset.onclick = () => applyPlaybackRate(DEFAULT_PLAYBACK_RATE);
 

@@ -2663,13 +2663,20 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
 };
 
 // frontend/src/click-renderer-worklet-source.js
+var DEFAULT_CLICK_SOUND = "classic";
+var CLICK_SOUND_IDS = Object.freeze(["classic", "wood", "hihat"]);
+var normalizeClickSound = (value) => CLICK_SOUND_IDS.includes(value) ? value : DEFAULT_CLICK_SOUND;
 var clickRendererWorkletSource = `
+const CLICK_SOUNDS = new Set(${JSON.stringify(["classic", "wood", "hihat"])});
 class ClickRendererProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.voiceFrame = -1;
     this.refractoryFrames = Math.round(sampleRate * 0.1);
     this.refractoryRemaining = 0;
+    this.clickSound = '${DEFAULT_CLICK_SOUND}';
+    this.noiseState = 1;
+    this.previousNoise = 0;
     this.port.onmessage = ({ data }) => {
       const rate = Number(data?.playbackRate);
       if (rate > 0) {
@@ -2677,6 +2684,7 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         // marker while stretching it, so cover its full scaled span plus 20ms.
         this.refractoryFrames = Math.round(sampleRate * 0.075 / rate);
       }
+      if (CLICK_SOUNDS.has(data?.clickSound)) this.clickSound = data.clickSound;
     };
   }
 
@@ -2689,6 +2697,8 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
       if (this.refractoryRemaining === 0 && Math.abs(marker?.[i] ?? 0) >= 0.02) {
         this.voiceFrame = 0;
         this.refractoryRemaining = this.refractoryFrames;
+        this.noiseState = 1;
+        this.previousNoise = 0;
       }
       if (this.voiceFrame < 0) continue;
       const t = this.voiceFrame / sampleRate;
@@ -2697,8 +2707,21 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         continue;
       }
       const attack = Math.min(1, t / 0.0015);
-      const decay = Math.exp(-t / 0.009);
-      output[i] = Math.sin(2 * Math.PI * 1800 * t) * attack * decay * 0.9;
+      let sample;
+      if (this.clickSound === 'wood') {
+        const decay = Math.exp(-t / 0.012);
+        sample = (Math.sin(2 * Math.PI * 950 * t) * 0.72 + Math.sin(2 * Math.PI * 1450 * t) * 0.28) * attack * decay * 0.9;
+      } else if (this.clickSound === 'hihat') {
+        const decay = Math.exp(-t / 0.006);
+        this.noiseState = (Math.imul(1664525, this.noiseState) + 1013904223) >>> 0;
+        const noise = this.noiseState / 0x80000000 - 1;
+        sample = (noise - this.previousNoise) * attack * decay * 0.55;
+        this.previousNoise = noise;
+      } else {
+        const decay = Math.exp(-t / 0.009);
+        sample = Math.sin(2 * Math.PI * 1800 * t) * attack * decay * 0.9;
+      }
+      output[i] = sample;
       this.voiceFrame++;
     }
     return true;
@@ -2863,8 +2886,9 @@ var connectAlignedOutput = (ctx, source, media, stems = []) => {
   clickRenderer.connect(click);
   click.connect(ctx.destination);
   const setPlaybackRate = (playbackRate2) => clickRenderer.port.postMessage({ playbackRate: playbackRate2 });
+  const setClickSound = (clickSound) => clickRenderer.port.postMessage({ clickSound: normalizeClickSound(clickSound) });
   setPlaybackRate(media.playbackRate || 1);
-  return { click, players, setPlaybackRate, destroy() {
+  return { click, players, setPlaybackRate, setClickSound, destroy() {
     removals.forEach((remove) => remove());
     for (const player of Object.values(players)) player.pause();
     for (const node of nodes) node.disconnect();
@@ -3077,6 +3101,7 @@ var SELECTORS = {
   volMusicVal: document.getElementById("vol-music-val"),
   volMetro: document.getElementById("vol-metro"),
   volMetroVal: document.getElementById("vol-metro-val"),
+  clickSound: document.getElementById("click-sound"),
   playbackRate: document.getElementById("playback-rate"),
   playbackRateVal: document.getElementById("playback-rate-val"),
   btnSpeedReset: document.getElementById("btn-speed-reset"),
@@ -4010,6 +4035,7 @@ var exportStemMix = async () => {
         endSec: range?.end ?? null,
         clickTimes,
         clickVolume: includeClick ? Number(SELECTORS.volMetro.value) : 0,
+        clickSound: normalizeClickSound(SELECTORS.clickSound.value),
         outputFilename: downloadName
       })
     });
@@ -4653,9 +4679,11 @@ var audiblePlaybackClock = () => ({ media: ws?.getMediaElement(), name: "shared"
 var updateAlignedClickOutput = () => {
   const reference = audiblePlaybackClock().media;
   const volume = metroOn ? Number(SELECTORS.volMetro.value) / 100 : 0;
+  const clickSound = normalizeClickSound(SELECTORS.clickSound?.value);
   for (const [media, output] of alignedOutputs) {
     output.click.gain.value = media === reference ? volume : 0;
     output.setPlaybackRate(playbackRate);
+    output.setClickSound(clickSound);
   }
 };
 var startMetro = () => updateAlignedClickOutput();
@@ -6272,6 +6300,12 @@ var setupControls = () => {
   };
   setVol(SELECTORS.volMusic, SELECTORS.volMusicVal, "volMusic", applyMusicVolume);
   setVol(SELECTORS.volMetro, SELECTORS.volMetroVal, "volMetro", updateAlignedClickOutput);
+  SELECTORS.clickSound.value = normalizeClickSound(cfg().clickSound);
+  SELECTORS.clickSound.onchange = () => {
+    SELECTORS.clickSound.value = normalizeClickSound(SELECTORS.clickSound.value);
+    saveCfg("clickSound", SELECTORS.clickSound.value);
+    updateAlignedClickOutput();
+  };
   SELECTORS.playbackRate.oninput = () => applyPlaybackRate(SELECTORS.playbackRate.value);
   SELECTORS.btnSpeedReset.onclick = () => applyPlaybackRate(DEFAULT_PLAYBACK_RATE);
   for (const stem of STEM_NAMES) {

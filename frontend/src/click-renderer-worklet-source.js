@@ -1,12 +1,20 @@
 // AudioWorklet modules run in a separate global scope. Keep the source inside
 // the app bundle so desktop authentication cannot block a second file request.
+export const DEFAULT_CLICK_SOUND = 'classic';
+export const CLICK_SOUND_IDS = Object.freeze(['classic', 'wood', 'hihat']);
+export const normalizeClickSound = value => CLICK_SOUND_IDS.includes(value) ? value : DEFAULT_CLICK_SOUND;
+
 export const clickRendererWorkletSource = `
+const CLICK_SOUNDS = new Set(${JSON.stringify(['classic', 'wood', 'hihat'])});
 class ClickRendererProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.voiceFrame = -1;
     this.refractoryFrames = Math.round(sampleRate * 0.1);
     this.refractoryRemaining = 0;
+    this.clickSound = '${DEFAULT_CLICK_SOUND}';
+    this.noiseState = 1;
+    this.previousNoise = 0;
     this.port.onmessage = ({ data }) => {
       const rate = Number(data?.playbackRate);
       if (rate > 0) {
@@ -14,6 +22,7 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         // marker while stretching it, so cover its full scaled span plus 20ms.
         this.refractoryFrames = Math.round(sampleRate * 0.075 / rate);
       }
+      if (CLICK_SOUNDS.has(data?.clickSound)) this.clickSound = data.clickSound;
     };
   }
 
@@ -26,6 +35,8 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
       if (this.refractoryRemaining === 0 && Math.abs(marker?.[i] ?? 0) >= 0.02) {
         this.voiceFrame = 0;
         this.refractoryRemaining = this.refractoryFrames;
+        this.noiseState = 1;
+        this.previousNoise = 0;
       }
       if (this.voiceFrame < 0) continue;
       const t = this.voiceFrame / sampleRate;
@@ -34,8 +45,21 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         continue;
       }
       const attack = Math.min(1, t / 0.0015);
-      const decay = Math.exp(-t / 0.009);
-      output[i] = Math.sin(2 * Math.PI * 1800 * t) * attack * decay * 0.9;
+      let sample;
+      if (this.clickSound === 'wood') {
+        const decay = Math.exp(-t / 0.012);
+        sample = (Math.sin(2 * Math.PI * 950 * t) * 0.72 + Math.sin(2 * Math.PI * 1450 * t) * 0.28) * attack * decay * 0.9;
+      } else if (this.clickSound === 'hihat') {
+        const decay = Math.exp(-t / 0.006);
+        this.noiseState = (Math.imul(1664525, this.noiseState) + 1013904223) >>> 0;
+        const noise = this.noiseState / 0x80000000 - 1;
+        sample = (noise - this.previousNoise) * attack * decay * 0.55;
+        this.previousNoise = noise;
+      } else {
+        const decay = Math.exp(-t / 0.009);
+        sample = Math.sin(2 * Math.PI * 1800 * t) * attack * decay * 0.9;
+      }
+      output[i] = sample;
       this.voiceFrame++;
     }
     return true;

@@ -3,6 +3,7 @@ const MAX_PLAYER_SETTINGS_BYTES = 256 * 1024;
 const PLAYER_SETTING_KEYS = new Set([
   "volMusic",
   "volMetro",
+  "clickSound",
   "playbackRate",
   "loop",
   "metro",

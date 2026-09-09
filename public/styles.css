@@ -4346,6 +4346,7 @@ select:focus,
 .tempo-controls { gap: 12px; margin-left: auto; }
 .vol-bar .vol-item { min-width: 0; }
 .vol-lbl { white-space: nowrap; }
+.click-sound-select { width: 86px; min-width: 72px; height: 30px; padding: 2px 5px; font-size: 12px; }
 .bpm-item { margin-left: 0; gap: 9px; }
 .bpm-reading { gap: 7px; white-space: nowrap; }
 .bpm-reading .stat-lbl { font-size: 10px; letter-spacing: .12em; }
@@ -4374,6 +4375,7 @@ select:focus,
   .tempo-controls { width: 100%; flex-wrap: wrap; }
   .volume-controls .vol-item,
   .tempo-controls .vol-item { flex: 1 1 100%; }
+  .click-sound-select { width: 92px; }
   .tempo-controls .bpm-item { flex: 1 1 100%; }
 }
 
@@ -4470,6 +4472,7 @@ select:focus,
   body.video-fullscreen-mode .practice-controls .volume-controls .vol-val { display: none; }
   body.video-fullscreen-mode .practice-controls .volume-controls input[type="range"],
   body.video-fullscreen-mode .practice-controls .tempo-controls input[type="range"] { width: 58px; }
+  body.video-fullscreen-mode .click-sound-select { width: 68px; min-width: 68px; }
   body.video-fullscreen-mode .practice-controls .bpm-actions .mini-btn { padding-inline: 5px; }
 }
 
