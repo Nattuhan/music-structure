@@ -7,7 +7,7 @@ import { formatBytes } from "./storage.js";
 import { extractWaveformPeaks } from "./waveform-peaks.js";
 import { mediaSyncAction, planStemPlayback } from "./playback-sync.js";
 import { createStemTransport } from "./stem-transport.js";
-import { alignedWav, connectAlignedOutput } from "./aligned-click.js";
+import { alignedWav, connectAlignedOutput, loadClickRenderer } from "./aligned-click.js";
 import { videoClickAction } from "./video-gestures.js";
 
 const lucide = { createIcons: renderIcons };
@@ -1925,7 +1925,10 @@ const audiblePlaybackClock = () => ({ media: ws?.getMediaElement(), name: "share
 const updateAlignedClickOutput = () => {
   const reference = audiblePlaybackClock().media;
   const volume = metroOn ? Number(SELECTORS.volMetro.value) / 100 : 0;
-  for (const [media, output] of alignedOutputs) output.click.gain.value = media === reference ? volume : 0;
+  for (const [media, output] of alignedOutputs) {
+    output.click.gain.value = media === reference ? volume : 0;
+    output.setPlaybackRate(playbackRate);
+  }
 };
 const startMetro = () => updateAlignedClickOutput();
 // Pausing/seeking the one media source stops its click samples as well.
@@ -3232,6 +3235,8 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
         sharedStems.push({ name, url: stemAssets[name], unavailable: !track });
       }
     }
+    await loadClickRenderer(getCtx());
+    preparation.signal.throwIfAborted();
     const blob = await alignedWav(original, beats, { tracks, signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob); preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
@@ -3271,7 +3276,9 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   });
 
   masterSourceNode = getCtx().createMediaElementSource(ws.getMediaElement());
-  alignedOutputs.set(ws.getMediaElement(), connectAlignedOutput(getCtx(), masterSourceNode, ws.getMediaElement(), sharedStems));
+  alignedOutputs.set(ws.getMediaElement(), connectAlignedOutput(
+    getCtx(), masterSourceNode, ws.getMediaElement(), sharedStems,
+  ));
   if (sharedStems.length) initStemPlayers();
   applyMusicVolume(SELECTORS.volMusic.value);
   ws.setPlaybackRate?.(playbackRate, true);

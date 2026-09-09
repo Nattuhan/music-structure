@@ -2662,6 +2662,52 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
   return { setPlayers, setMix, play, pause, sync, retry, useOriginal, setMasterWaiting, destroy, snapshot };
 };
 
+// frontend/src/click-renderer-worklet-source.js
+var clickRendererWorkletSource = `
+class ClickRendererProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.voiceFrame = -1;
+    this.refractoryFrames = Math.round(sampleRate * 0.1);
+    this.refractoryRemaining = 0;
+    this.port.onmessage = ({ data }) => {
+      const rate = Number(data?.playbackRate);
+      if (rate > 0) {
+        // The embedded marker is 55ms long. Pitch preservation can split that
+        // marker while stretching it, so cover its full scaled span plus 20ms.
+        this.refractoryFrames = Math.round(sampleRate * 0.075 / rate);
+      }
+    };
+  }
+
+  process(inputs, outputs) {
+    const marker = inputs[0]?.[0];
+    const output = outputs[0]?.[0];
+    if (!output) return true;
+    for (let i = 0; i < output.length; i++) {
+      if (this.refractoryRemaining > 0) this.refractoryRemaining--;
+      if (this.refractoryRemaining === 0 && Math.abs(marker?.[i] ?? 0) >= 0.02) {
+        this.voiceFrame = 0;
+        this.refractoryRemaining = this.refractoryFrames;
+      }
+      if (this.voiceFrame < 0) continue;
+      const t = this.voiceFrame / sampleRate;
+      if (t >= 0.045) {
+        this.voiceFrame = -1;
+        continue;
+      }
+      const attack = Math.min(1, t / 0.0015);
+      const decay = Math.exp(-t / 0.009);
+      output[i] = Math.sin(2 * Math.PI * 1800 * t) * attack * decay * 0.9;
+      this.voiceFrame++;
+    }
+    return true;
+  }
+}
+
+registerProcessor('click-renderer', ClickRendererProcessor);
+`;
+
 // frontend/src/aligned-click.js
 var clickWave = (sampleRate) => {
   const wave = new Float32Array(Math.ceil(sampleRate * 0.055));
@@ -2724,11 +2770,20 @@ var alignedWav = async (buffer, beats, { tracks = [], signal, yieldTask = () => 
   signal?.throwIfAborted();
   return new Blob(chunks, { type: "audio/wav" });
 };
+var workletLoads = /* @__PURE__ */ new WeakMap();
+var loadClickRenderer = (ctx) => {
+  if (!workletLoads.has(ctx)) {
+    const url = URL.createObjectURL(new Blob([clickRendererWorkletSource], { type: "text/javascript" }));
+    workletLoads.set(ctx, ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url)));
+  }
+  return workletLoads.get(ctx);
+};
 var connectAlignedOutput = (ctx, source, media, stems = []) => {
   const splitter = ctx.createChannelSplitter(3 + stems.length * 2);
+  const clickRenderer = new AudioWorkletNode(ctx, "click-renderer", { outputChannelCount: [1] });
   const click = ctx.createGain();
   click.gain.value = 0;
-  const nodes = [splitter, click], removals = [], players = {};
+  const nodes = [splitter, clickRenderer, click], removals = [], players = {};
   source.connect(splitter);
   const musicGain = (track) => {
     const stereo = ctx.createChannelMerger(2), gain = ctx.createGain();
@@ -2804,12 +2859,16 @@ var connectAlignedOutput = (ctx, source, media, stems = []) => {
     apply();
     players[name] = player;
   });
-  splitter.connect(click, 2 + stems.length * 2);
+  splitter.connect(clickRenderer, 2 + stems.length * 2);
+  clickRenderer.connect(click);
   click.connect(ctx.destination);
-  return { click, players, destroy() {
+  const setPlaybackRate = (playbackRate2) => clickRenderer.port.postMessage({ playbackRate: playbackRate2 });
+  setPlaybackRate(media.playbackRate || 1);
+  return { click, players, setPlaybackRate, destroy() {
     removals.forEach((remove) => remove());
     for (const player of Object.values(players)) player.pause();
     for (const node of nodes) node.disconnect();
+    clickRenderer.port.close();
     delete media.volume;
     delete media.muted;
     media.volume = volume;
@@ -4594,7 +4653,10 @@ var audiblePlaybackClock = () => ({ media: ws?.getMediaElement(), name: "shared"
 var updateAlignedClickOutput = () => {
   const reference = audiblePlaybackClock().media;
   const volume = metroOn ? Number(SELECTORS.volMetro.value) / 100 : 0;
-  for (const [media, output] of alignedOutputs) output.click.gain.value = media === reference ? volume : 0;
+  for (const [media, output] of alignedOutputs) {
+    output.click.gain.value = media === reference ? volume : 0;
+    output.setPlaybackRate(playbackRate);
+  }
 };
 var startMetro = () => updateAlignedClickOutput();
 var stopMetro = () => updateAlignedClickOutput();
@@ -5771,6 +5833,8 @@ var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateSte
         sharedStems.push({ name, url: stemAssets[name], unavailable: !track });
       }
     }
+    await loadClickRenderer(getCtx());
+    preparation.signal.throwIfAborted();
     const blob = await alignedWav(original, beats, { tracks, signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob);
     preparedUrls.push(audioUrl);
@@ -5809,7 +5873,12 @@ var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateSte
     plugins: [d2.create()]
   });
   masterSourceNode = getCtx().createMediaElementSource(ws.getMediaElement());
-  alignedOutputs.set(ws.getMediaElement(), connectAlignedOutput(getCtx(), masterSourceNode, ws.getMediaElement(), sharedStems));
+  alignedOutputs.set(ws.getMediaElement(), connectAlignedOutput(
+    getCtx(),
+    masterSourceNode,
+    ws.getMediaElement(),
+    sharedStems
+  ));
   if (sharedStems.length) initStemPlayers();
   applyMusicVolume(SELECTORS.volMusic.value);
   ws.setPlaybackRate?.(playbackRate, true);

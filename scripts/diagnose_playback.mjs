@@ -89,15 +89,23 @@ const summary = [];
 assert.equal(result.mediaSources, 1, "Parts and click must share one media decoder");
 assert.equal(new Set(result.operations.map(e=>e.label)).size, 13);
 for (const label of new Set(result.events.map(e=>e.label))) {
- const events=result.events.filter(e=>e.label===label), clicks=events.filter(e=>e.ch===5);
+ const events=result.events.filter(e=>e.label===label), clicks=events.filter(e=>e.ch===5&&!e.envelope);
  for (let channel=1;channel<=4;channel++) {
   const music=events.filter(e=>e.ch===channel);
   const differences=clicks.map(c=>music.reduce((best,m)=>Math.abs(c.t-m.t)<Math.abs(best)?c.t-m.t:best,Infinity)).filter(d=>Math.abs(d)<0.25);
   summary.push({label,part:["vocals","drums","bass","other"][channel-1],samples:differences.length,maximumMs:Math.max(...differences.map(Math.abs))*1000});
  }
 }
-fs.writeFileSync(root+'summary.json',JSON.stringify({summary,errors},null,2));
-console.log(JSON.stringify({output:root,summary,errors},null,2));
+const clickQuality=[];
+for(const label of new Set(result.events.map(e=>e.label))){
+ const active=result.events.filter(e=>e.label===label&&e.ch===5&&e.envelope).sort((a,b)=>a.t-b.t),groups=[];
+ for(const event of active){const previous=groups.at(-1)?.at(-1);if(!previous||event.t-previous.t>.012)groups.push([event]);else groups.at(-1).push(event);}
+ const durationsMs=groups.map(group=>(group.at(-1).t-group[0].t)*1000);
+ clickQuality.push({label,samples:groups.length,maximumDurationMs:Math.max(...durationsMs)});
+}
+fs.writeFileSync(root+'summary.json',JSON.stringify({summary,clickQuality,errors},null,2));
+console.log(JSON.stringify({output:root,summary,clickQuality,errors},null,2));
 assert.deepEqual(errors,[]);
 for(const row of summary){assert.ok(row.samples>=3,`${row.label}: missing PCM measurements`);assert.ok(row.maximumMs<10,`${row.label}: ${row.maximumMs.toFixed(1)}ms drift`);}
+for(const row of clickQuality){assert.ok(row.samples>=3,`${row.label}: missing click envelopes`);assert.ok(row.maximumDurationMs<65,`${row.label}: click stretched to ${row.maximumDurationMs.toFixed(1)}ms`);}
 } finally {await app.close();await new Promise(resolve=>server.close(resolve));}

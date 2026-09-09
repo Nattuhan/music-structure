@@ -1,3 +1,5 @@
+import { clickRendererWorkletSource } from './click-renderer-worklet-source.js';
+
 // Carry every part and the click as channels of ONE media file. Chromium's pitch
 // preservation moves audio transients relative to currentTime; an oscillator
 // scheduled from that clock cannot follow those moves. Channels in one decoder
@@ -60,12 +62,22 @@ export const alignedWav = async (buffer, beats, { tracks = [], signal, yieldTask
   return new Blob(chunks, { type: 'audio/wav' });
 };
 
+const workletLoads = new WeakMap();
+export const loadClickRenderer = ctx => {
+  if (!workletLoads.has(ctx)) {
+    const url = URL.createObjectURL(new Blob([clickRendererWorkletSource], { type: 'text/javascript' }));
+    workletLoads.set(ctx, ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url)));
+  }
+  return workletLoads.get(ctx);
+};
+
 // The stem "players" below are gain controls over the same media, not separate
 // decoders. Their time/seek/rate always comes from that one transport.
 export const connectAlignedOutput = (ctx, source, media, stems = []) => {
   const splitter = ctx.createChannelSplitter(3 + stems.length * 2);
+  const clickRenderer = new AudioWorkletNode(ctx, 'click-renderer', { outputChannelCount: [1] });
   const click = ctx.createGain(); click.gain.value = 0;
-  const nodes = [splitter, click], removals = [], players = {};
+  const nodes = [splitter, clickRenderer, click], removals = [], players = {};
   source.connect(splitter);
   const musicGain = track => {
     const stereo = ctx.createChannelMerger(2), gain = ctx.createGain();
@@ -106,11 +118,14 @@ export const connectAlignedOutput = (ctx, source, media, stems = []) => {
     }
     apply(); players[name] = player;
   });
-  splitter.connect(click, 2 + stems.length * 2); click.connect(ctx.destination);
-  return { click, players, destroy() {
+  splitter.connect(clickRenderer, 2 + stems.length * 2); clickRenderer.connect(click); click.connect(ctx.destination);
+  const setPlaybackRate = playbackRate => clickRenderer.port.postMessage({ playbackRate });
+  setPlaybackRate(media.playbackRate || 1);
+  return { click, players, setPlaybackRate, destroy() {
     removals.forEach(remove => remove());
     for (const player of Object.values(players)) player.pause();
     for (const node of nodes) node.disconnect();
+    clickRenderer.port.close();
     delete media.volume; delete media.muted;
     media.volume = volume; media.muted = muted;
   } };
