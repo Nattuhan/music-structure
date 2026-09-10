@@ -2666,8 +2666,13 @@ var createStemTransport = ({ getTime, getRate, isPlaying, onChange, onSync = () 
 var DEFAULT_CLICK_SOUND = "classic";
 var CLICK_SOUND_IDS = Object.freeze(["classic", "wood", "hihat"]);
 var normalizeClickSound = (value) => CLICK_SOUND_IDS.includes(value) ? value : DEFAULT_CLICK_SOUND;
+var DEFAULT_CLICK_PITCH = "standard";
+var CLICK_PITCH_IDS = Object.freeze(["low", "standard", "high"]);
+var normalizeClickPitch = (value) => CLICK_PITCH_IDS.includes(value) ? value : DEFAULT_CLICK_PITCH;
+var CLICK_SOURCE_GAIN = 1.2;
 var clickRendererWorkletSource = `
 const CLICK_SOUNDS = new Set(${JSON.stringify(["classic", "wood", "hihat"])});
+const CLICK_PITCHES = ${JSON.stringify({ low: 1200, standard: 1800, high: 2400 })};
 class ClickRendererProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -2675,6 +2680,7 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
     this.refractoryFrames = Math.round(sampleRate * 0.1);
     this.refractoryRemaining = 0;
     this.clickSound = '${DEFAULT_CLICK_SOUND}';
+    this.clickPitch = '${DEFAULT_CLICK_PITCH}';
     this.noiseState = 1;
     this.previousNoise = 0;
     this.port.onmessage = ({ data }) => {
@@ -2685,6 +2691,7 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         this.refractoryFrames = Math.round(sampleRate * 0.075 / rate);
       }
       if (CLICK_SOUNDS.has(data?.clickSound)) this.clickSound = data.clickSound;
+      if (Object.hasOwn(CLICK_PITCHES, data?.clickPitch)) this.clickPitch = data.clickPitch;
     };
   }
 
@@ -2719,9 +2726,10 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         this.previousNoise = noise;
       } else {
         const decay = Math.exp(-t / 0.009);
-        sample = Math.sin(2 * Math.PI * 1800 * t) * attack * decay * 0.9;
+        sample = Math.sin(2 * Math.PI * CLICK_PITCHES[this.clickPitch] * t) * attack * decay * 0.9;
       }
-      output[i] = sample;
+      // Raise the source level without changing the user's 0\u2013100 volume scale.
+      output[i] = Math.max(-1, Math.min(1, sample * ${CLICK_SOURCE_GAIN}));
       this.voiceFrame++;
     }
     return true;
@@ -2886,9 +2894,10 @@ var connectAlignedOutput = (ctx, source, media, stems = []) => {
   clickRenderer.connect(click);
   click.connect(ctx.destination);
   const setPlaybackRate = (playbackRate2) => clickRenderer.port.postMessage({ playbackRate: playbackRate2 });
-  const setClickSound = (clickSound) => clickRenderer.port.postMessage({ clickSound: normalizeClickSound(clickSound) });
+  const setClickSound = (clickSound2) => clickRenderer.port.postMessage({ clickSound: normalizeClickSound(clickSound2) });
+  const setClickPitch = (clickPitch2) => clickRenderer.port.postMessage({ clickPitch: normalizeClickPitch(clickPitch2) });
   setPlaybackRate(media.playbackRate || 1);
-  return { click, players, setPlaybackRate, setClickSound, destroy() {
+  return { click, players, setPlaybackRate, setClickSound, setClickPitch, destroy() {
     removals.forEach((remove) => remove());
     for (const player of Object.values(players)) player.pause();
     for (const node of nodes) node.disconnect();
@@ -3101,7 +3110,9 @@ var SELECTORS = {
   volMusicVal: document.getElementById("vol-music-val"),
   volMetro: document.getElementById("vol-metro"),
   volMetroVal: document.getElementById("vol-metro-val"),
-  clickSound: document.getElementById("click-sound"),
+  settingsClickSound: document.getElementById("settings-click-sound"),
+  settingsClickPitch: document.getElementById("settings-click-pitch"),
+  settingsClickPitchField: document.getElementById("settings-click-pitch-field"),
   playbackRate: document.getElementById("playback-rate"),
   playbackRateVal: document.getElementById("playback-rate-val"),
   btnSpeedReset: document.getElementById("btn-speed-reset"),
@@ -3226,6 +3237,8 @@ var audioAvailable = true;
 var audioReady = false;
 var videoAvailable = true;
 var playbackRate = 1;
+var clickSound = "classic";
+var clickPitch = "standard";
 var audioCtx = null;
 var audioPreparation = null;
 var alignedAssetUrls = [];
@@ -4035,7 +4048,8 @@ var exportStemMix = async () => {
         endSec: range?.end ?? null,
         clickTimes,
         clickVolume: includeClick ? Number(SELECTORS.volMetro.value) : 0,
-        clickSound: normalizeClickSound(SELECTORS.clickSound.value),
+        clickSound,
+        clickPitch,
         outputFilename: downloadName
       })
     });
@@ -4679,11 +4693,11 @@ var audiblePlaybackClock = () => ({ media: ws?.getMediaElement(), name: "shared"
 var updateAlignedClickOutput = () => {
   const reference = audiblePlaybackClock().media;
   const volume = metroOn ? Number(SELECTORS.volMetro.value) / 100 : 0;
-  const clickSound = normalizeClickSound(SELECTORS.clickSound?.value);
   for (const [media, output] of alignedOutputs) {
     output.click.gain.value = media === reference ? volume : 0;
     output.setPlaybackRate(playbackRate);
     output.setClickSound(clickSound);
+    output.setClickPitch(clickPitch);
   }
 };
 var startMetro = () => updateAlignedClickOutput();
@@ -5298,6 +5312,9 @@ var selectSettingsSection = (section) => {
 var syncCloudFieldsState = () => {
   SELECTORS.settingsCloudFields?.classList.toggle("disabled", !SELECTORS.settingsCloudEnabled?.checked);
 };
+var syncClickPitchFieldState = () => {
+  SELECTORS.settingsClickPitchField.hidden = SELECTORS.settingsClickSound.value !== "classic";
+};
 var renderCloudStatus = (status) => {
   cloudStatus = status || { configured: false };
   if (!SELECTORS.btnCloudSync || staticLibraryMode) return;
@@ -5419,6 +5436,9 @@ var openSettings = async (section = "general") => {
   SELECTORS.settingsCpuSetup.hidden = true;
   SELECTORS.settingsNvidiaSetup.hidden = true;
   SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
+  SELECTORS.settingsClickSound.value = clickSound;
+  SELECTORS.settingsClickPitch.value = clickPitch;
+  syncClickPitchFieldState();
   const manualUpdates = desktopSettings.updateMode === "manual";
   SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
   if (manualUpdates) SELECTORS.settingsAutoUpdate.checked = false;
@@ -5486,6 +5506,11 @@ var saveSettings = async () => {
         endpointUrl: SELECTORS.settingsCloudEndpoint.value
       }
     });
+    clickSound = normalizeClickSound(SELECTORS.settingsClickSound.value);
+    clickPitch = normalizeClickPitch(SELECTORS.settingsClickPitch.value);
+    saveCfg("clickSound", clickSound);
+    saveCfg("clickPitch", clickPitch);
+    updateAlignedClickOutput();
     SELECTORS.settingsSaveStatus.textContent = "\u4FDD\u5B58\u3057\u307E\u3057\u305F\u3002\u8A2D\u5B9A\u3092\u53CD\u6620\u3057\u307E\u3059...";
     setTimeout(closeSettings, 150);
   } catch (error) {
@@ -6300,12 +6325,8 @@ var setupControls = () => {
   };
   setVol(SELECTORS.volMusic, SELECTORS.volMusicVal, "volMusic", applyMusicVolume);
   setVol(SELECTORS.volMetro, SELECTORS.volMetroVal, "volMetro", updateAlignedClickOutput);
-  SELECTORS.clickSound.value = normalizeClickSound(cfg().clickSound);
-  SELECTORS.clickSound.onchange = () => {
-    SELECTORS.clickSound.value = normalizeClickSound(SELECTORS.clickSound.value);
-    saveCfg("clickSound", SELECTORS.clickSound.value);
-    updateAlignedClickOutput();
-  };
+  clickSound = normalizeClickSound(cfg().clickSound);
+  clickPitch = normalizeClickPitch(cfg().clickPitch);
   SELECTORS.playbackRate.oninput = () => applyPlaybackRate(SELECTORS.playbackRate.value);
   SELECTORS.btnSpeedReset.onclick = () => applyPlaybackRate(DEFAULT_PLAYBACK_RATE);
   for (const stem of STEM_NAMES) {
@@ -7618,6 +7639,7 @@ SELECTORS.settingsSave?.addEventListener("click", saveSettings);
 SELECTORS.settingsCloudExport?.addEventListener("click", exportCloudConnection);
 SELECTORS.settingsCloudImport?.addEventListener("click", importCloudConnection);
 SELECTORS.settingsCloudEnabled?.addEventListener("change", syncCloudFieldsState);
+SELECTORS.settingsClickSound?.addEventListener("change", syncClickPitchFieldState);
 SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach((button) => {
   button.addEventListener("click", () => {
     selectSettingsSection(button.dataset.settingsSection);

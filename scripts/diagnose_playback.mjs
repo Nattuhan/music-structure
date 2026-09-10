@@ -31,6 +31,11 @@ const errors=[];page.on('pageerror',error=>errors.push(error.message));
 try {
 await page.addInitScript(()=>{
  localStorage.clear();
+ window.practiceLabDesktop={
+  getPlayerSettings:()=>({}),savePlayerSettings:settings=>({ok:true,settings}),
+  getSettings:async()=>({autoUpdate:true,version:'test',cloud:{enabled:false}}),saveSettings:async settings=>settings,
+  getToken:async()=>'',onUpdateStatus:()=>()=>{},onCommand:()=>()=>{},
+ };
  window.__probe={events:[],clocks:[],operations:[],players:[],parts:[],label:'init'};
  const p=window.__probe,Native=window.AudioContext,connect=AudioNode.prototype.connect;
  const NativeAudio = window.Audio;
@@ -69,6 +74,7 @@ const mark=async label=>{console.log(label);await page.evaluate(label=>{const p=
 const wait=async ms=>{await page.waitForTimeout(ms);fs.writeFileSync(root+'matrix-partial.json',JSON.stringify(await page.evaluate(()=>({events:window.__probe.events,clocks:window.__probe.clocks,operations:window.__probe.operations}))));};
 const seek=async second=>{const b=await page.locator('#waveform').boundingBox();await page.mouse.click(b.x+b.width*second/8,b.y+b.height*.5);};
 const drag=async(a,b)=>{const box=await page.locator('#waveform').boundingBox();await page.mouse.move(box.x+box.width*a/8,box.y+box.height*.5);await page.mouse.down();await page.mouse.move(box.x+box.width*b/8,box.y+box.height*.5,{steps:8});await page.mouse.up();};
+const selectClickSound=async(sound,pitch)=>{await page.locator('#btn-top-settings').click();await page.locator('#settings-click-sound').selectOption(sound);if(pitch)await page.locator('#settings-click-pitch').selectOption(pitch);await page.locator('#settings-save').click();await page.locator('#settings-dialog').waitFor({state:'hidden'});};
 await page.evaluate(()=>localStorage.clear());
 await mark('normal');await page.locator('#btn-play').click();await wait(4000);
 await mark('rate-070');await page.locator('#playback-rate').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},'0.70');await seek(.4);await wait(7500);
@@ -78,10 +84,10 @@ await mark('range-loop-070');await page.locator('#btn-loop').click();await drag(
 await mark('move-range-070');await drag(2,3);await wait(10000);
 await mark('resize-range-070');const h=page.locator('[data-loop-handle="start"]');const hb=await h.boundingBox();await page.mouse.move(hb.x+hb.width/2,hb.y+hb.height/2);await page.mouse.down();await page.mouse.move(hb.x-40,hb.y+hb.height/2,{steps:8});await page.mouse.up();await wait(7000);
 await mark('rate-050-loop');await page.locator('#playback-rate').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},'0.50');await wait(12000);
-await mark('rate-075-loop');await page.locator('#playback-rate').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},'0.75');await wait(10000);
-await page.locator('#click-sound').selectOption('wood');await mark('rate-100-loop-wood');await page.locator('#playback-rate').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},'1.00');await wait(8000);
+await selectClickSound('wood');await mark('rate-075-loop-wood');await page.locator('#playback-rate').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},'0.75');await wait(10000);
+await selectClickSound('classic','high');await mark('rate-100-loop-high');await page.locator('#playback-rate').evaluate((el,value)=>{el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));},'1.00');await wait(8000);
 await mark('rate-025-loop');await page.locator('#playback-rate').evaluate(el=>{el.value='0.25';el.dispatchEvent(new Event('input',{bubbles:true}));});await wait(26000);
-await page.locator('#click-sound').selectOption('hihat');await mark('rate-125-loop-hihat');await page.locator('#playback-rate').evaluate(el=>{el.value='1.25';el.dispatchEvent(new Event('input',{bubbles:true}));});await wait(9000);
+await selectClickSound('hihat');await mark('rate-125-loop-hihat');await page.locator('#playback-rate').evaluate(el=>{el.value='1.25';el.dispatchEvent(new Event('input',{bubbles:true}));});await wait(9000);
 await mark('on-beat-loop');await page.locator('#playback-rate').evaluate(el=>{el.value='0.70';el.dispatchEvent(new Event('input',{bubbles:true}));});await page.locator('#btn-clear-range').click();await drag(1,3);await wait(12000);
 const result=await page.evaluate(()=>{const p=window.__probe;return {events:p.events,clocks:p.clocks,operations:p.operations,mediaSources:p.players.length};});
 fs.writeFileSync(root+'matrix-result.json',JSON.stringify(result));

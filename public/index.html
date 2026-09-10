@@ -142,11 +142,6 @@
             </div>
             <div class="vol-item">
               <span class="vol-lbl" title="クリック音量"><i data-lucide="music-2"></i><span>クリック</span></span>
-              <select id="click-sound" class="click-sound-select" aria-label="クリック音">
-                <option value="classic">標準</option>
-                <option value="wood">ウッド</option>
-                <option value="hihat">ハイハット</option>
-              </select>
               <input type="range" id="vol-metro" min="0" max="100" value="85" aria-label="クリック音量">
               <span class="vol-val" id="vol-metro-val">85%</span>
             </div>
@@ -516,6 +511,29 @@
           <div class="settings-group">
             <h3>アプリの動作</h3>
             <label class="settings-toggle"><span><strong>自動アップデート</strong><small id="settings-auto-update-description">起動時に新しいバージョンを確認します。</small></span><input id="settings-auto-update" type="checkbox" checked></label>
+          </div>
+          <div class="settings-group">
+            <h3>再生</h3>
+            <div class="settings-playback-fields">
+              <label class="settings-field" for="settings-click-sound">
+                <span>クリック音</span>
+                <select id="settings-click-sound">
+                  <option value="classic">標準</option>
+                  <option value="wood">ウッド</option>
+                  <option value="hihat">ハイハット</option>
+                </select>
+                <small>練習中とクリックを含むパート書き出しで使用します。</small>
+              </label>
+              <label class="settings-field" id="settings-click-pitch-field" for="settings-click-pitch">
+                <span>標準クリックの音程</span>
+                <select id="settings-click-pitch">
+                  <option value="low">低め（1200 Hz）</option>
+                  <option value="standard">標準（1800 Hz）</option>
+                  <option value="high">高め（2400 Hz）</option>
+                </select>
+                <small>クリック音で「標準」を選んだ場合に使用します。</small>
+              </label>
+            </div>
           </div>
           <div class="settings-group">
             <h3>データ保存場所</h3>

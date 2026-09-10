@@ -2,6 +2,7 @@ import subprocess
 import tempfile
 import unittest
 import wave
+from array import array
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,6 +22,25 @@ class StemExportTests(unittest.TestCase):
                         payloads.append(source.readframes(source.getnframes()))
             self.assertEqual(len(set(payloads)), 3)
             self.assertTrue(all(any(payload) for payload in payloads))
+
+    def test_creates_distinct_standard_click_pitches(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(services, "DATA_WORK_DIR", Path(temp_dir)):
+                payloads = []
+                for pitch in ("low", "standard", "high"):
+                    path = services.create_export_click_track([0], 85, "classic", pitch)
+                    with wave.open(str(path), "rb") as source:
+                        payloads.append(source.readframes(source.getnframes()))
+            self.assertEqual(len(set(payloads)), 3)
+
+    def test_raises_export_click_source_level_without_changing_visible_volume(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(services, "DATA_WORK_DIR", Path(temp_dir)):
+                path = services.create_export_click_track([0], 85)
+                with wave.open(str(path), "rb") as source:
+                    samples = array("h")
+                    samples.frombytes(source.readframes(source.getnframes()))
+            self.assertGreater(max(map(abs, samples)) / 32767, 0.60)
 
     def test_exports_only_enabled_stems_with_volume_and_range(self):
         with tempfile.TemporaryDirectory() as temp_dir:

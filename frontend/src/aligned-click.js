@@ -1,4 +1,4 @@
-import { clickRendererWorkletSource, normalizeClickSound } from './click-renderer-worklet-source.js';
+import { clickRendererWorkletSource, normalizeClickPitch, normalizeClickSound } from './click-renderer-worklet-source.js';
 
 // Carry every part and the click as channels of ONE media file. Chromium's pitch
 // preservation moves audio transients relative to currentTime; an oscillator
@@ -121,8 +121,9 @@ export const connectAlignedOutput = (ctx, source, media, stems = []) => {
   splitter.connect(clickRenderer, 2 + stems.length * 2); clickRenderer.connect(click); click.connect(ctx.destination);
   const setPlaybackRate = playbackRate => clickRenderer.port.postMessage({ playbackRate });
   const setClickSound = clickSound => clickRenderer.port.postMessage({ clickSound: normalizeClickSound(clickSound) });
+  const setClickPitch = clickPitch => clickRenderer.port.postMessage({ clickPitch: normalizeClickPitch(clickPitch) });
   setPlaybackRate(media.playbackRate || 1);
-  return { click, players, setPlaybackRate, setClickSound, destroy() {
+  return { click, players, setPlaybackRate, setClickSound, setClickPitch, destroy() {
     removals.forEach(remove => remove());
     for (const player of Object.values(players)) player.pause();
     for (const node of nodes) node.disconnect();

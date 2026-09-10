@@ -4,6 +4,7 @@ const PLAYER_SETTING_KEYS = new Set([
   "volMusic",
   "volMetro",
   "clickSound",
+  "clickPitch",
   "playbackRate",
   "loop",
   "metro",

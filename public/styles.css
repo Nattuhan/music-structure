@@ -3533,7 +3533,10 @@ input[type="range"] { accent-color: var(--orange); }
 .cloud-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; padding: 2px; }
 .cloud-fields.disabled { opacity: .42; pointer-events: none; }
 .settings-field { display: flex; flex-direction: column; gap: 6px; color: var(--gray-7); font-size: 10px; font-weight: 700; }
-.settings-field input {
+.settings-field[hidden] { display: none; }
+.settings-playback-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.settings-field input,
+.settings-field select {
   width: 100%;
   min-height: 38px;
   padding: 8px 10px;
@@ -3544,7 +3547,8 @@ input[type="range"] { accent-color: var(--orange); }
   font: 11px var(--font);
   outline: none;
 }
-.settings-field input:focus { border-color: rgba(255, 122, 61, .6); box-shadow: 0 0 0 3px rgba(255, 122, 61, .09); }
+.settings-field input:focus,
+.settings-field select:focus { border-color: rgba(255, 122, 61, .6); box-shadow: 0 0 0 3px rgba(255, 122, 61, .09); }
 .settings-advanced { grid-column: 1 / -1; color: var(--gray-6); font-size: 11px; }
 .settings-advanced summary { margin-bottom: 10px; cursor: pointer; }
 .settings-about-mark { width: 62px; height: 62px; display: grid; place-items: center; margin-bottom: 17px; border: 1px solid rgba(255, 122, 61, .35); border-radius: 16px; color: var(--orange); background: rgba(255, 122, 61, .1); font-size: 20px; font-weight: 900; }
@@ -3563,6 +3567,7 @@ input[type="range"] { accent-color: var(--orange); }
   .settings-head { min-height: 64px; padding-inline: 14px; }
   .settings-sections { padding: 14px; }
   .cloud-fields { grid-template-columns: 1fr; }
+  .settings-playback-fields { grid-template-columns: 1fr; }
   .settings-analysis-modes { grid-template-columns: 1fr; }
   .settings-feature-card { grid-template-columns: auto 1fr; }
   .settings-feature-actions { grid-column: 1 / -1; }
@@ -4346,7 +4351,6 @@ select:focus,
 .tempo-controls { gap: 12px; margin-left: auto; }
 .vol-bar .vol-item { min-width: 0; }
 .vol-lbl { white-space: nowrap; }
-.click-sound-select { width: 86px; min-width: 72px; height: 30px; padding: 2px 5px; font-size: 12px; }
 .bpm-item { margin-left: 0; gap: 9px; }
 .bpm-reading { gap: 7px; white-space: nowrap; }
 .bpm-reading .stat-lbl { font-size: 10px; letter-spacing: .12em; }
@@ -4375,7 +4379,6 @@ select:focus,
   .tempo-controls { width: 100%; flex-wrap: wrap; }
   .volume-controls .vol-item,
   .tempo-controls .vol-item { flex: 1 1 100%; }
-  .click-sound-select { width: 92px; }
   .tempo-controls .bpm-item { flex: 1 1 100%; }
 }
 
@@ -4472,7 +4475,6 @@ select:focus,
   body.video-fullscreen-mode .practice-controls .volume-controls .vol-val { display: none; }
   body.video-fullscreen-mode .practice-controls .volume-controls input[type="range"],
   body.video-fullscreen-mode .practice-controls .tempo-controls input[type="range"] { width: 58px; }
-  body.video-fullscreen-mode .click-sound-select { width: 68px; min-width: 68px; }
   body.video-fullscreen-mode .practice-controls .bpm-actions .mini-btn { padding-inline: 5px; }
 }
 

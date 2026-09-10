@@ -59,6 +59,7 @@ class StemExportRequest(BaseModel):
     clickTimes: list[float] = Field(default_factory=list)
     clickVolume: float = Field(default=0, ge=0, le=100)
     clickSound: Literal["classic", "wood", "hihat"] = "classic"
+    clickPitch: Literal["low", "standard", "high"] = "standard"
     outputFilename: str = "stem-mix.mp3"
 
 

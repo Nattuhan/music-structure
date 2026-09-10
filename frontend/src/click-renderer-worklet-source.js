@@ -3,9 +3,14 @@
 export const DEFAULT_CLICK_SOUND = 'classic';
 export const CLICK_SOUND_IDS = Object.freeze(['classic', 'wood', 'hihat']);
 export const normalizeClickSound = value => CLICK_SOUND_IDS.includes(value) ? value : DEFAULT_CLICK_SOUND;
+export const DEFAULT_CLICK_PITCH = 'standard';
+export const CLICK_PITCH_IDS = Object.freeze(['low', 'standard', 'high']);
+export const normalizeClickPitch = value => CLICK_PITCH_IDS.includes(value) ? value : DEFAULT_CLICK_PITCH;
+export const CLICK_SOURCE_GAIN = 1.2;
 
 export const clickRendererWorkletSource = `
 const CLICK_SOUNDS = new Set(${JSON.stringify(['classic', 'wood', 'hihat'])});
+const CLICK_PITCHES = ${JSON.stringify({ low: 1200, standard: 1800, high: 2400 })};
 class ClickRendererProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -13,6 +18,7 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
     this.refractoryFrames = Math.round(sampleRate * 0.1);
     this.refractoryRemaining = 0;
     this.clickSound = '${DEFAULT_CLICK_SOUND}';
+    this.clickPitch = '${DEFAULT_CLICK_PITCH}';
     this.noiseState = 1;
     this.previousNoise = 0;
     this.port.onmessage = ({ data }) => {
@@ -23,6 +29,7 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         this.refractoryFrames = Math.round(sampleRate * 0.075 / rate);
       }
       if (CLICK_SOUNDS.has(data?.clickSound)) this.clickSound = data.clickSound;
+      if (Object.hasOwn(CLICK_PITCHES, data?.clickPitch)) this.clickPitch = data.clickPitch;
     };
   }
 
@@ -57,9 +64,10 @@ class ClickRendererProcessor extends AudioWorkletProcessor {
         this.previousNoise = noise;
       } else {
         const decay = Math.exp(-t / 0.009);
-        sample = Math.sin(2 * Math.PI * 1800 * t) * attack * decay * 0.9;
+        sample = Math.sin(2 * Math.PI * CLICK_PITCHES[this.clickPitch] * t) * attack * decay * 0.9;
       }
-      output[i] = sample;
+      // Raise the source level without changing the user's 0–100 volume scale.
+      output[i] = Math.max(-1, Math.min(1, sample * ${CLICK_SOURCE_GAIN}));
       this.voiceFrame++;
     }
     return true;

@@ -1,13 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { alignedWav, clickWave } from '../src/aligned-click.js';
-import { CLICK_SOUND_IDS, normalizeClickSound } from '../src/click-renderer-worklet-source.js';
+import { CLICK_PITCH_IDS, CLICK_SOUND_IDS, CLICK_SOURCE_GAIN, normalizeClickPitch, normalizeClickSound } from '../src/click-renderer-worklet-source.js';
 
 test('クリック音は共通の3種類だけを受け付け、不正値は標準へ戻す', () => {
   assert.deepEqual(CLICK_SOUND_IDS, ['classic', 'wood', 'hihat']);
   assert.equal(normalizeClickSound('wood'), 'wood');
   assert.equal(normalizeClickSound('unknown'), 'classic');
   assert.equal(normalizeClickSound(undefined), 'classic');
+});
+
+test('標準クリックの音程は3段階だけを受け付ける', () => {
+  assert.deepEqual(CLICK_PITCH_IDS, ['low', 'standard', 'high']);
+  assert.equal(normalizeClickPitch('high'), 'high');
+  assert.equal(normalizeClickPitch('unknown'), 'standard');
+});
+
+test('クリックの表示音量を変えずに波形を1.2倍へ増幅する', () => {
+  assert.equal(CLICK_SOURCE_GAIN, 1.2);
 });
 
 const source = (length = 24000, sampleRate = 8000, stereo = true) => {

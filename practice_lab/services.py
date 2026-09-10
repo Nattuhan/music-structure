@@ -586,6 +586,7 @@ def export_stem_mix(
     click_times: list[float] | None = None,
     click_volume: float = 0,
     click_sound: str = "classic",
+    click_pitch: str = "standard",
 ) -> Path:
     """Render the enabled stems and their current volume levels to a temporary MP3."""
     active_stems: list[tuple[str, float]] = []
@@ -608,6 +609,8 @@ def export_stem_mix(
         raise ValueError("Invalid click volume")
     if click_sound not in {"classic", "wood", "hihat"}:
         raise ValueError("Invalid click sound")
+    if click_pitch not in {"low", "standard", "high"}:
+        raise ValueError("Invalid click pitch")
 
     stem_dir = (PUBLIC_STEMS_DIR / video_id).resolve()
     if PUBLIC_STEMS_DIR.resolve() not in stem_dir.parents:
@@ -631,7 +634,7 @@ def export_stem_mix(
 
     click_path = None
     if click_times and click_volume > 0:
-        click_path = create_export_click_track(click_times, click_volume, click_sound)
+        click_path = create_export_click_track(click_times, click_volume, click_sound, click_pitch)
         command.extend(["-i", str(click_path)])
 
     filters = []
@@ -666,13 +669,20 @@ def export_stem_mix(
     return output_path
 
 
-def create_export_click_track(click_times: list[float], volume: float, click_sound: str = "classic") -> Path:
+def create_export_click_track(
+    click_times: list[float],
+    volume: float,
+    click_sound: str = "classic",
+    click_pitch: str = "standard",
+) -> Path:
     sample_rate = 44100
     click_duration = 0.055
     total_frames = max(1, math.ceil((click_times[-1] + click_duration) * sample_rate))
     samples = array("h", [0]) * total_frames
     click_frames = math.ceil(click_duration * sample_rate)
-    peak = 32767 * (volume / 100) * 0.72
+    # Keep the visible volume scale unchanged while raising the click source by 1.2x.
+    peak = 32767 * (volume / 100) * 0.72 * 1.2
+    classic_frequency = {"low": 1200, "standard": 1800, "high": 2400}[click_pitch]
     for click_time in click_times:
         start_frame = round(click_time * sample_rate)
         for offset in range(click_frames):
@@ -692,7 +702,7 @@ def create_export_click_track(click_times: list[float], volume: float, click_sou
                 tone = (noise - previous) * 0.62
             else:
                 envelope = math.exp(-elapsed / 0.009)
-                tone = math.sin(2 * math.pi * 1800 * elapsed)
+                tone = math.sin(2 * math.pi * classic_frequency * elapsed)
             value = samples[frame] + round(peak * attack * envelope * tone)
             samples[frame] = max(-32768, min(32767, value))
     with tempfile.NamedTemporaryFile(
@@ -717,6 +727,7 @@ def create_stem_mix_export(
     click_times: list[float] | None = None,
     click_volume: float = 0,
     click_sound: str = "classic",
+    click_pitch: str = "standard",
     output_filename: str = "stem-mix.mp3",
     job_id: str,
 ) -> dict:
@@ -729,6 +740,7 @@ def create_stem_mix_export(
         click_times=click_times,
         click_volume=click_volume,
         click_sound=click_sound,
+        click_pitch=click_pitch,
     )
     export_dir = DATA_WORK_DIR / "stem-exports"
     export_dir.mkdir(parents=True, exist_ok=True)
