@@ -11,26 +11,26 @@ Mac配布版をDeveloper ID署名・Apple公証済みにする場合は、[MornN
 - 配布物に利用者の音源、設定、認証情報、処理履歴を含めない。
 - `CFBundleShortVersionString`と提出名を一致させ、元ZIPのSHA-256を記録する。
 
-## 大きいZIPの扱い
+## MornNotaryへの提出
 
-PracticeLabはGitHubの単一ファイル上限100 MiBを超えるため、MornNotaryの分割ZIP対応が必要です。共有mainを直接変更せず、提出用ブランチに変更とアプリをまとめます。
+MornNotaryを最新化し、同梱の`sign.sh`へビルド済みアプリを渡します。
 
 ```bash
-ditto -c -k --keepParent PracticeLab.app PracticeLab-full.zip
-zip -s 80m PracticeLab-full.zip --out incoming/PracticeLab-1.2.2-arm64.zip
+git -C /path/to/MornNotary pull --ff-only
+/path/to/MornNotary/sign.sh /path/to/PracticeLab.app
 ```
 
-生成された`.z01`、`.z02`などと、最後の`.zip`をすべて提出します。分割ファイルごとのSHA-256台帳も添付し、runnerでは検証後に`zip -s 0`で単一ZIPへ戻してから展開します。提出前にローカルでも再結合・展開し、アプリの署名検証が通ることを確認します。
+送信、100 MiBを超えるZIPの分割、SHA-256検証、署名待ち、成果物の取得、署名検証、一時ブランチとArtifactの削除はスクリプトが処理します。成功すると元アプリと同じ場所へ`PracticeLab-signed.zip`が保存され、元アプリは変更されません。失敗時は原因を調べられるよう依頼ブランチを残します。分割方式や提出用ブランチをPracticeLab側で実装しません。
 
 ## PracticeLabに必要な署名設定
 
-すべてのMach-Oを内側からDeveloper IDで署名し、Hardened Runtimeと安全なタイムスタンプを付けます。
+提出前のアドホック署名で、プロセスごとに必要な権限を埋め込みます。MornNotaryは既存の権限を保持し、すべてのMach-Oを内側からDeveloper IDで再署名して、Hardened Runtimeと安全なタイムスタンプを付けます。
 
 - Electron本体とHelper実行ファイル: `com.apple.security.cs.allow-jit`。V8の実行に必要です。
 - 同梱バックエンド: `com.apple.security.cs.disable-library-validation`。利用者データ領域の追加楽譜抽出パックを読み込むために必要です。
 - それ以外のバイナリ: 上記の例外を一律に付けません。
 
-最後に外側のアプリへ署名する際、内側の権限を保持します。`notarytool`の結果が`Accepted`となり、`stapler staple`と`stapler validate`が成功した成果物だけを使います。
+PracticeLabの検証処理でも、署名後にこれらの権限が残っていることを確認します。`notarytool`の結果が`Accepted`となり、`stapler staple`と`stapler validate`が成功した成果物だけを使います。
 
 ## 受け取りと検証
 
@@ -66,6 +66,6 @@ CIはZIPの署名・公証と更新情報のハッシュ・サイズも検証し
 
 ## GitHub側で配布物を準備する場合
 
-ローカル回線で大きい配布物を再送したくない場合は、`stage-notarized-mac.yml`を使用できます。成功したMornNotary runのArtifactに対する短時間だけ有効なダウンロードURLを、`MORNNOTARY_ARTIFACT_URL`という一時的なActions Secretに保存し、署名済みバージョンを指定して実行します。URLは対象アプリのArtifactだけを取得できるもので、アカウントのトークンや署名用の秘密鍵は渡しません。実行が終わったら一時Secretを削除します。
+ローカルでMornNotaryの署名済みZIPを受け取る標準手順を使えない場合に限り、`stage-notarized-mac.yml`を使用できます。成功したMornNotary runのArtifactに対する短時間だけ有効なダウンロードURLを、`MORNNOTARY_ARTIFACT_URL`という一時的なActions Secretに保存し、署名済みバージョンを指定して実行します。実行が終わったら一時Secretを削除します。
 
 この処理は署名・公証・起動を再検証し、DMGと更新情報を作って既存draftへ添付するだけです。一般公開は通常のタグ付きリリースワークフローで行います。

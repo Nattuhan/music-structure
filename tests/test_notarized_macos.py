@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.verify_notarized_macos import verify_app
+from scripts.verify_notarized_macos import verify_app, verify_required_entitlements
 
 
 class NotarizedMacTests(unittest.TestCase):
@@ -45,3 +45,24 @@ class NotarizedMacTests(unittest.TestCase):
                 with patch("scripts.verify_notarized_macos.subprocess.run", side_effect=run):
                     with self.assertRaises(subprocess.CalledProcessError):
                         verify_app(self.app, "1.2.2", False)
+
+    def test_required_process_entitlements_are_checked(self):
+        helper = self.app / "Contents" / "Frameworks" / "PracticeLab Helper (Renderer).app"
+        (helper / "Contents" / "MacOS").mkdir(parents=True)
+        xml = {
+            "PracticeLab": {"com.apple.security.cs.allow-jit": True},
+            "PracticeLab Helper (Renderer)": {"com.apple.security.cs.allow-jit": True},
+            "practice-lab-backend": {"com.apple.security.cs.disable-library-validation": True},
+        }
+
+        def run(command, **kwargs):
+            data = plistlib.dumps(xml[Path(command[-1]).name]).decode()
+            return subprocess.CompletedProcess(command, 0, stderr=f"Executable=test\n{data}")
+
+        with patch("scripts.verify_notarized_macos.subprocess.run", side_effect=run):
+            verify_required_entitlements(self.app)
+
+        xml["practice-lab-backend"] = {}
+        with patch("scripts.verify_notarized_macos.subprocess.run", side_effect=run):
+            with self.assertRaisesRegex(RuntimeError, "library-validation"):
+                verify_required_entitlements(self.app)

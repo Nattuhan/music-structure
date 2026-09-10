@@ -33,7 +33,7 @@ UI・静的ビューア変更を含む場合は、`practice-lab-r2-sync`スキ�
 ## 公開
 
 1. リリース変更をコミットして`main`へpushする。
-2. `docs/macos-notarization.md`に従いMac版の署名・公証を済ませ、検証済みDMG、自動更新用ZIP、`latest-mac.yml`、DMGのSHA-256台帳を対象バージョンのdraft Releaseへ用意する。タグのCIはこれらを入力として必要とする。転送に使った一時Secretは処理後に削除する。
+2. MornNotaryを`git pull --ff-only`で最新化し、`docs/macos-notarization.md`に従って同リポジトリの`sign.sh`へビルド済み`.app`を渡す。スクリプトが送信、必要時の分割、署名待ち、取得、検証、掃除まで完了させる。受け取ったZIPから検証済みDMG、自動更新用ZIP、`latest-mac.yml`、DMGのSHA-256台帳を対象バージョンのdraft Releaseへ用意する。タグのCIはこれらを入力として必要とする。
 3. 配布物の元になったコミットへ`vX.Y.Z`の注釈付きタグを作成してpushする。既存タグを上書きしない。
 4. タグで起動した`release-desktop.yml`の正確なrunを監視する。Windows、Apple Silicon Mac、`release-metadata`の全jobが成功するまで完了扱いにしない。
 5. ワークフローは両OSの成果物検証後、Releaseを非draftかつlatestとして公開する。途中のArtifactを正式Releaseとして代用しない。

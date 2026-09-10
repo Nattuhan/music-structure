@@ -12,6 +12,36 @@ import urllib.request
 from pathlib import Path
 
 
+def read_entitlements(executable: Path) -> dict:
+    result = subprocess.run(
+        ["codesign", "-d", "--entitlements", ":-", "--xml", str(executable)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    output = (result.stderr or "") + (result.stdout or "")
+    start = output.find("<?xml")
+    if start < 0:
+        raise RuntimeError(f"Could not read entitlements from {executable}")
+    return plistlib.loads(output[start:].encode())
+
+
+def verify_required_entitlements(app: Path) -> None:
+    executable_name = app.stem
+    electron_processes = [app / "Contents" / "MacOS" / executable_name]
+    frameworks = app / "Contents" / "Frameworks"
+    for helper in frameworks.glob(f"{executable_name} Helper*.app"):
+        electron_processes.append(helper / "Contents" / "MacOS" / helper.stem)
+
+    for executable in electron_processes:
+        if not read_entitlements(executable).get("com.apple.security.cs.allow-jit"):
+            raise RuntimeError(f"Electron JIT entitlement is missing from {executable}")
+
+    backend = app / "Contents" / "Resources" / "backend" / "practice-lab-backend"
+    if not read_entitlements(backend).get("com.apple.security.cs.disable-library-validation"):
+        raise RuntimeError(f"Backend library-validation entitlement is missing from {backend}")
+
+
 def verify_app(app: Path, version: str, runtime: bool) -> None:
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     if info.get("CFBundleIdentifier") != "jp.nattuhan.practicelab" or info.get("CFBundleShortVersionString") != version:
@@ -24,6 +54,7 @@ def verify_app(app: Path, version: str, runtime: bool) -> None:
     subprocess.run(["spctl", "--assess", "--type", "execute", "--verbose=2", str(app)], check=True)
     if not runtime:
         return
+    verify_required_entitlements(app)
     # Gatekeeper acceptance alone cannot detect missing Electron JIT rights or
     # a broken nested Python runtime. Exercise both without touching user data.
     env = {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
