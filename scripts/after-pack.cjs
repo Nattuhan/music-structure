@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 function sign(pathToCode, entitlements) {
-  const args = ["--force", "--options", "runtime", "--timestamp=none"];
+  const args = ["--force"];
   if (entitlements) args.push("--entitlements", entitlements);
   args.push("--sign", "-", pathToCode);
   const result = spawnSync("codesign", args, { encoding: "utf8" });
@@ -42,8 +42,7 @@ module.exports = async function afterPack(context) {
   );
 
   const result = spawnSync("codesign", [
-    "--force", "--deep", "--options", "runtime", "--timestamp=none",
-    "--preserve-metadata=entitlements", "--sign", "-", appPath,
+    "--force", "--deep", "--preserve-metadata=entitlements", "--sign", "-", appPath,
   ], { encoding: "utf8" });
   if (result.status !== 0) {
     const details = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
